@@ -1,1 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>点位阶梯计算器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+SC:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f2f2ee;
+    --surface:#ffffff;
+    --surface-2:#f8f8f5;
+    --border:#dcdbd3;
+    --border-strong:#c7c5ba;
+    --ink:#1d211f;
+    --ink-muted:#5c6360;
+    --ink-faint:#8b9190;
+    --accent:#3f5a56;
+    --accent-ink:#ffffff;
+    --focus:#3f5a56;
+
+    --zA:#c1473a; --zA-tint:#c1473a1a; --zA-tint-strong:#c1473a33;
+    --zB:#b8862a; --zB-tint:#b8862a1a; --zB-tint-strong:#b8862a33;
+    --zC:#2f6fa8; --zC-tint:#2f6fa81a; --zC-tint-strong:#2f6fa833;
+    --zD:#2e8b57; --zD-tint:#2e8b571a; --zD-tint-strong:#2e8b5733;
+    --zE:#7c4fa5; --zE-tint:#7c4fa51a; --zE-tint-strong:#7c4fa533;
+
+    --good:#2e8b57; --warn:#b8862a; --bad:#c1473a;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171a;
+      --surface:#1b1f22;
+      --surface-2:#202427;
+      --border:#2c3134;
+      --border-strong:#3a4045;
+      --ink:#e7e9e6;
+      --ink-muted:#a3aaa7;
+      --ink-faint:#767d7a;
+      --accent:#8fb3ac;
+      --accent-ink:#0f1412;
+      --focus:#8fb3ac;
+
+      --zA:#ba3535; --zA-tint:#ba35352b; --zA-tint-strong:#ba353545;
+      --zB:#b18e15; --zB-tint:#b18e152b; --zB-tint-strong:#b18e1545;
+      --zC:#3c7ebe; --zC-tint:#3c7ebe2b; --zC-tint-strong:#3c7ebe45;
+      --zD:#3b9555; --zD-tint:#3b95552b; --zD-tint-strong:#3b955545;
+      --zE:#995eb2; --zE-tint:#995eb22b; --zE-tint-strong:#995eb245;
+
+      --good:#4caf7d; --warn:#d1ab4a; --bad:#e0685a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171a;
+    --surface:#1b1f22;
+    --surface-2:#202427;
+    --border:#2c3134;
+    --border-strong:#3a4045;
+    --ink:#e7e9e6;
+    --ink-muted:#a3aaa7;
+    --ink-faint:#767d7a;
+    --accent:#8fb3ac;
+    --accent-ink:#0f1412;
+    --focus:#8fb3ac;
+
+    --zA:#ba3535; --zA-tint:#ba35352b; --zA-tint-strong:#ba353545;
+    --zB:#b18e15; --zB-tint:#b18e152b; --zB-tint-strong:#b18e1545;
+    --zC:#3c7ebe; --zC-tint:#3c7ebe2b; --zC-tint-strong:#3c7ebe45;
+    --zD:#3b9555; --zD-tint:#3b95552b; --zD-tint-strong:#3b955545;
+    --zE:#995eb2; --zE-tint:#995eb22b; --zE-tint-strong:#995eb245;
+
+    --good:#4caf7d; --warn:#d1ab4a; --bad:#e0685a;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"IBM Plex Sans SC","IBM Plex Sans",system-ui,sans-serif;
+    padding:28px 20px 64px;
+    line-height:1.5;
+  }
+  .num{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+
+  .wrap{max-width:920px;margin:0 auto;}
+
+  header.page{margin-bottom:22px;}
+  .eyebrow{
+    font-size:12px; letter-spacing:.08em; color:var(--ink-faint);
+    text-transform:uppercase; margin:0 0 6px;
+  }
+  h1{font-size:26px; margin:0 0 8px; font-weight:700; letter-spacing:-.01em; text-wrap:balance;}
+  .lede{color:var(--ink-muted); font-size:14.5px; max-width:62ch; margin:0;}
+
+  section{margin-top:28px;}
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:18px 20px;
+  }
+  h2{font-size:15px; margin:0 0 4px; font-weight:600;}
+  .section-sub{font-size:12.5px; color:var(--ink-muted); margin:0 0 14px;}
+
+  /* ---- input console ---- */
+  .ticker-row{display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-size:12px; color:var(--ink-muted);}
+  .field input, .field select{
+    font:inherit; font-family:"IBM Plex Mono",monospace; font-size:14px;
+    padding:8px 10px; border:1px solid var(--border-strong); border-radius:6px;
+    background:var(--surface-2); color:var(--ink); width:100%;
+  }
+  .field input:focus, .field select:focus{outline:2px solid var(--focus); outline-offset:1px;}
+  .field.wide{min-width:180px;}
+  .field.ticker input{font-family:"IBM Plex Sans SC","IBM Plex Sans",sans-serif; font-weight:600; text-transform:uppercase;}
+
+  .groups{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px;}
+  .group{border:1px solid var(--border); border-radius:8px; padding:12px 14px; background:var(--surface-2);}
+  .group h3{margin:0 0 10px; font-size:12.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted); font-weight:600;}
+  .group .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .group .field{margin-bottom:0;}
+
+  .btn-row{display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; align-items:center;}
+  .live-badge{font-size:12px; color:var(--ink-faint);}
+  .live-dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--good); margin-right:6px; vertical-align:1px;}
+  .warn-banner{
+    display:flex; gap:8px; align-items:center; font-size:12.5px; color:var(--bad);
+    background:color-mix(in srgb, var(--bad) 12%, transparent);
+    border:1px solid color-mix(in srgb, var(--bad) 35%, transparent);
+    border-radius:7px; padding:8px 12px; margin-bottom:12px;
+  }
+  .hint{font-size:11.5px; color:var(--ink-faint); margin:2px 0 0;}
+  button{
+    font:inherit; font-size:13.5px; font-weight:600; cursor:pointer;
+    border-radius:7px; padding:9px 16px; border:1px solid var(--border-strong);
+    background:var(--surface); color:var(--ink);
+  }
+  button.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  button.ghost{background:transparent;}
+  button:hover{filter:brightness(0.96);}
+  :root[data-theme="dark"] button:hover, @media (prefers-color-scheme:dark){button:hover{filter:brightness(1.12);}}
+
+  /* ---- ladder ---- */
+  .banner{
+    display:flex; justify-content:space-between; gap:10px; align-items:center;
+    font-size:12.5px; padding:9px 14px; border-radius:7px;
+    background:var(--surface-2); border:1px dashed var(--border-strong); color:var(--ink-muted);
+  }
+  .banner.top{margin-bottom:8px;}
+  .banner.bottom{margin-top:8px;}
+
+  .ladder{display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .rung{
+    display:grid;
+    grid-template-columns:56px 1fr auto auto auto;
+    gap:14px; align-items:center;
+    padding:11px 16px;
+    border-top:1px solid var(--border);
+    position:relative;
+  }
+  .rung:first-child{border-top:none;}
+  .rung .tag{
+    font-weight:700; font-size:13px; font-family:"IBM Plex Mono",monospace;
+    width:34px; height:34px; border-radius:7px;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff;
+  }
+  .rung .meta{display:flex; flex-direction:column; gap:2px; min-width:0;}
+  .rung .action{font-size:13.5px; font-weight:600;}
+  .rung .sub{font-size:11.5px; color:var(--ink-muted);}
+  .rung .price{font-size:16px; font-weight:600; text-align:right; white-space:nowrap;}
+  .rung .alloc{font-size:13px; text-align:right; white-space:nowrap; min-width:56px;}
+  .rung .conv{font-size:10.5px; padding:3px 7px; border-radius:20px; white-space:nowrap; font-weight:600; justify-self:end;}
+  .conv.up{background:var(--good); color:#08150f;}
+  .conv.flat{background:var(--border-strong); color:var(--ink);}
+  .conv.down{background:var(--ink-faint); color:var(--surface);}
+
+  .rung.zA{background:var(--zA-tint);} .rung.zA .tag{background:var(--zA);}
+  .rung.zB{background:var(--zB-tint);} .rung.zB .tag{background:var(--zB);}
+  .rung.zC{background:var(--zC-tint);} .rung.zC .tag{background:var(--zC);}
+  .rung.zD{background:var(--zD-tint);} .rung.zD .tag{background:var(--zD);}
+  .rung.zE{background:var(--zE-tint);} .rung.zE .tag{background:var(--zE);}
+
+  .marker{
+    position:absolute; left:0; right:0; top:-1px;
+    border-top:2px solid var(--ink); pointer-events:none;
+  }
+  .marker .lbl{
+    position:absolute; right:16px; top:-9px;
+    background:var(--ink); color:var(--bg);
+    font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:600;
+    padding:1px 7px; border-radius:20px;
+  }
+
+  @media (max-width:560px){
+    .rung{grid-template-columns:40px 1fr auto; grid-template-areas:"tag meta price" "tag meta alloc"; row-gap:2px;}
+    .rung .tag{grid-area:tag; width:28px;height:28px;font-size:11.5px;}
+    .rung .meta{grid-area:meta;}
+    .rung .price{grid-area:price;}
+    .rung .alloc{grid-area:alloc;}
+    .rung .conv{display:none;}
+  }
+
+  /* legend */
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; font-size:12px; color:var(--ink-muted);}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+
+  details{margin-top:14px;}
+  summary{cursor:pointer; font-size:13px; font-weight:600; color:var(--ink); padding:4px 0;}
+  summary:hover{color:var(--accent);}
+  .method-body{font-size:13px; color:var(--ink-muted); padding-top:10px; border-top:1px solid var(--border); margin-top:10px;}
+  .method-body p{margin:0 0 10px;}
+  .method-body code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding:1px 5px; border-radius:4px; font-size:12px; color:var(--ink);}
+  .coef-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:12px;}
+
+  .hist-row{
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:9px 4px; border-top:1px solid var(--border); font-size:12.5px;
+  }
+  .hist-row:first-child{border-top:none;}
+  .hist-row .t{font-weight:600; font-family:"IBM Plex Mono",monospace;}
+  .hist-row .d{color:var(--ink-muted);}
+  .hist-row button{padding:4px 9px; font-size:11.5px;}
+  .empty{color:var(--ink-faint); font-size:12.5px; padding:6px 2px;}
+
+  footer.note{margin-top:26px; font-size:11.5px; color:var(--ink-faint); text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page">
+    <p class="eyebrow">Bree 的小工具箱</p>
+    <h1>点位阶梯计算器</h1>
+    <p class="lede">输入布林带 / EMA / 成交量 / 期权数据，改动任何一个数字都会立即重新算出 A–E 五档风险点位和建议仓位比例，不用点按钮。所有价格数据由你手动填入——本工具只做计算，不抓取也不猜测行情。</p>
+  </header>
+
+  <section class="card">
+    <h2>1 · 标的与当前价</h2>
+    <p class="section-sub">改数字即算，全程自动，不需要手动刷新。</p>
+    <div class="ticker-row">
+      <div class="field ticker" style="width:110px;">
+        <label for="ticker">代码</label>
+        <input id="ticker" value="示例" maxlength="10">
+      </div>
+      <div class="field" style="width:130px;">
+        <label for="price">现价</label>
+        <input id="price" class="num" type="number" step="0.01" value="42.30">
+      </div>
+      <div class="field wide">
+        <label for="asof">数据时间 / 来源</label>
+        <input id="asof" placeholder="例：TradingView 09/12 收盘">
+      </div>
+    </div>
+
+    <div class="groups">
+      <div class="group">
+        <h3>布林带 (20, 2σ)</h3>
+        <div class="grid2">
+          <div class="field"><label for="bbU">上轨</label><input id="bbU" class="num" type="number" step="0.01" value="46.80"></div>
+          <div class="field"><label for="bbM">中轨</label><input id="bbM" class="num" type="number" step="0.01" value="41.50"></div>
+          <div class="field" style="grid-column:1/3;"><label for="bbL">下轨</label><input id="bbL" class="num" type="number" step="0.01" value="36.20"></div>
+        </div>
+      </div>
+      <div class="group">
+        <h3>EMA 均线</h3>
+        <div class="grid2">
+          <div class="field"><label for="ema20">EMA20</label><input id="ema20" class="num" type="number" step="0.01" value="41.90"></div>
+          <div class="field"><label for="ema50">EMA50</label><input id="ema50" class="num" type="number" step="0.01" value="39.40"></div>
+          <div class="field" style="grid-column:1/3;"><label for="ema200">EMA200</label><input id="ema200" class="num" type="number" step="0.01" value="33.10"></div>
+        </div>
+      </div>
+      <div class="group">
+        <h3>成交量</h3>
+        <div class="grid2">
+          <div class="field"><label for="vol">当日量</label><input id="vol" class="num" type="number" step="1" value="18400000"></div>
+          <div class="field"><label for="avgVol">20日均量</label><input id="avgVol" class="num" type="number" step="1" value="12600000"></div>
+        </div>
+      </div>
+      <div class="group">
+        <h3>期权情绪</h3>
+        <div class="grid2">
+          <div class="field"><label for="pcr">Put/Call 比</label><input id="pcr" class="num" type="number" step="0.01" value="0.68"></div>
+          <div class="field"><label for="ivr">IV Rank %</label><input id="ivr" class="num" type="number" step="1" value="52"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="ghost" id="btnSample">载入示例数据</button>
+      <button class="primary" id="btnSave">保存这次快照</button>
+      <span class="live-badge" id="restoreNote"></span>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2><span class="live-dot"></span>2 · 点位阶梯 · 自动实时</h2>
+      <p class="section-sub" id="tickerHeadline">示例 · 现价 $42.30</p>
+      <p class="hint" id="asofHint"></p>
+
+      <div id="warnSlot"></div>
+      <div class="banner top" id="bannerTop"></div>
+      <div class="ladder" id="ladder"></div>
+      <div class="banner bottom" id="bannerBottom"></div>
+
+      <div class="legend">
+        <span><i style="background:var(--zE)"></i>E 强卖 · 高风险</span>
+        <span><i style="background:var(--zD)"></i>D 卖出 · 中上风险</span>
+        <span><i style="background:var(--zC)"></i>C 试仓 · 中风险</span>
+        <span><i style="background:var(--zB)"></i>B 买入 · 低风险</span>
+        <span><i style="background:var(--zA)"></i>A 强买 · 极高风险</span>
+      </div>
+
+      <details id="methodDetails">
+        <summary>计算方法说明（点开看公式，可在下方校准）</summary>
+        <div class="method-body">
+          <p><strong>点位。</strong>以布林带带宽 <code>BW = 上轨 − 下轨</code> 为单位，向下轨外侧和上轨外侧展开 11 个点位：A1 在下轨下方，A2 贴下轨；B1/B2 在下轨与中轨之间；C1/C2 卡在中轨两侧作试仓区；D1/D2 在中轨与上轨之间；D3 贴上轨；E1/E2 在上轨上方。系数都可以在下面调。</p>
+          <p><strong>趋势修正。</strong>若 EMA20 &gt; EMA50 &gt; EMA200（多头排列），且 EMA50 落在下轨与中轨之间，则 A2/B2 会向 EMA50 加权靠拢（强势股回调常常到不了下轨）；若三线空头排列，则 D2/D3 向 EMA50 靠拢，且 A1 略微下修，因为下跌趋势里更容易跌穿布林带。</p>
+          <p><strong>仓位强弱调整。</strong>成交量放大（当日量 ≥ 20日均量 × 1.5）会同时增强买卖两侧的仓位建议；缩量（&lt; 0.8×）则减弱。Put/Call 比 ≥ 1.1（恐慌性买权）在低位是反向看多信号，会加强买入档、减弱卖出档；比值 ≤ 0.7（追涨买权）则相反。IV Rank ≥ 60 视为事件风险偏高，两侧仓位建议都会略微下修。这一段是最值得你拿历史行情（比如MRVL 8月那次反转）回测校准的部分。</p>
+          <div class="coef-grid">
+            <div class="field"><label for="kA1">A1 越过下轨幅度 (×BW)</label><input id="kA1" class="num" type="number" step="0.01" value="0.50"></div>
+            <div class="field"><label for="kOuter">B1/D1 偏移 (×BW)</label><input id="kOuter" class="num" type="number" step="0.01" value="0.30"></div>
+            <div class="field"><label for="kInner">B2/D2 偏移 (×BW)</label><input id="kInner" class="num" type="number" step="0.01" value="0.12"></div>
+            <div class="field"><label for="kTrial">C1/C2 半宽 (×BW)</label><input id="kTrial" class="num" type="number" step="0.01" value="0.08"></div>
+            <div class="field"><label for="kE1">E1 越过上轨幅度 (×BW)</label><input id="kE1" class="num" type="number" step="0.01" value="0.30"></div>
+            <div class="field"><label for="kE2">E2 越过上轨幅度 (×BW)</label><input id="kE2" class="num" type="number" step="0.01" value="0.60"></div>
+          </div>
+          <p style="margin-top:12px;"><strong>基准仓位比例（会被强弱调整放大/缩小）：</strong></p>
+          <div class="coef-grid">
+            <div class="field"><label for="pA1">A1 %</label><input id="pA1" class="num" type="number" step="1" value="20"></div>
+            <div class="field"><label for="pA2">A2 %</label><input id="pA2" class="num" type="number" step="1" value="35"></div>
+            <div class="field"><label for="pB1">B1 %</label><input id="pB1" class="num" type="number" step="1" value="15"></div>
+            <div class="field"><label for="pB2">B2 %</label><input id="pB2" class="num" type="number" step="1" value="5"></div>
+            <div class="field"><label for="pC1">C1 %</label><input id="pC1" class="num" type="number" step="1" value="10"></div>
+            <div class="field"><label for="pC2">C2 %</label><input id="pC2" class="num" type="number" step="1" value="5"></div>
+            <div class="field"><label for="pD1">D1 %</label><input id="pD1" class="num" type="number" step="1" value="5"></div>
+            <div class="field"><label for="pD2">D2 %</label><input id="pD2" class="num" type="number" step="1" value="10"></div>
+            <div class="field"><label for="pD3">D3 %</label><input id="pD3" class="num" type="number" step="1" value="15"></div>
+            <div class="field"><label for="pE1">E1 %</label><input id="pE1" class="num" type="number" step="1" value="40"></div>
+            <div class="field"><label for="pE2">E2 %</label><input id="pE2" class="num" type="number" step="1" value="20"></div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>3 · 快照记录</h2>
+      <p class="section-sub">保存在这台设备的浏览器里，换设备或清缓存看不到——重要结论建议手动同步回 Notion。</p>
+      <div id="histList"><p class="empty">还没有保存过快照。</p></div>
+      <div class="btn-row">
+        <button class="ghost" id="btnExport">导出为文本</button>
+        <button class="ghost" id="btnClearHist">清空记录</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="note">v1 · 系数是起点估计，不是回测结论 — 拿实际行情校准后再信它</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var ids = ["ticker","price","asof","bbU","bbM","bbL","ema20","ema50","ema200","vol","avgVol","pcr","ivr",
+              "kA1","kOuter","kInner","kTrial","kE1","kE2",
+              "pA1","pA2","pB1","pB2","pC1","pC2","pD1","pD2","pD3","pE1","pE2"];
+
+  var SAMPLE = {
+    ticker:"示例", price:42.30, asof:"演示数据 · 非真实行情",
+    bbU:46.80, bbM:41.50, bbL:36.20,
+    ema20:41.90, ema50:39.40, ema200:33.10,
+    vol:18400000, avgVol:12600000, pcr:0.68, ivr:52,
+    kA1:0.50, kOuter:0.30, kInner:0.12, kTrial:0.08, kE1:0.30, kE2:0.60,
+    pA1:20,pA2:35,pB1:15,pB2:5,pC1:10,pC2:5,pD1:5,pD2:10,pD3:15,pE1:40,pE2:20
+  };
+
+  function fmtPrice(v){ return "$" + v.toFixed(2); }
+  function num(id){ var v = parseFloat($(id).value); return isNaN(v) ? 0 : v; }
+
+  function loadSample(){
+    Object.keys(SAMPLE).forEach(function(k){
+      var el = $(k);
+      if (el) el.value = SAMPLE[k];
+    });
+  }
+
+  function applyState(state){
+    Object.keys(state).forEach(function(k){
+      var el = $(k);
+      if (el && state[k] !== undefined && state[k] !== null) el.value = state[k];
+    });
+  }
+
+  // ---- auto-persist last inputs across visits (this device/browser only) ----
+  var LKEY = "jackal_ladder_last_state_v1";
+  function saveLastState(){
+    try {
+      var state = ids.reduce(function(acc,id){ acc[id]=$(id).value; return acc; }, {});
+      localStorage.setItem(LKEY, JSON.stringify(state));
+    } catch(e){}
+  }
+  function restoreLastState(){
+    try {
+      var raw = localStorage.getItem(LKEY);
+      if (!raw) return false;
+      applyState(JSON.parse(raw));
+      return true;
+    } catch(e){ return false; }
+  }
+
+  function clampMult(score){
+    if (score <= -0.75) return 0.6;
+    if (score >= 0.75) return 1.3;
+    return 1.0;
+  }
+
+  function compute(){
+    var price = num("price");
+    var bbU = num("bbU"), bbM = num("bbM"), bbL = num("bbL");
+    var ema20 = num("ema20"), ema50 = num("ema50"), ema200 = num("ema200");
+    var vol = num("vol"), avgVol = num("avgVol");
+    var pcr = num("pcr"), ivr = num("ivr");
+    var kA1=num("kA1"), kOuter=num("kOuter"), kInner=num("kInner"), kTrial=num("kTrial"), kE1=num("kE1"), kE2=num("kE2");
+    var pA1=num("pA1"),pA2=num("pA2"),pB1=num("pB1"),pB2=num("pB2"),pC1=num("pC1"),pC2=num("pC2"),
+        pD1=num("pD1"),pD2=num("pD2"),pD3=num("pD3"),pE1=num("pE1"),pE2=num("pE2");
+
+    var BW = Math.max(bbU - bbL, 0.01);
+
+    var lv = {
+      A1: bbL - kA1*BW,
+      A2: bbL,
+      B1: bbL + kOuter*BW,
+      B2: bbM - kInner*BW,
+      C1: bbM - kTrial*BW,
+      C2: bbM + kTrial*BW,
+      D1: bbU - kOuter*BW,
+      D2: bbU - kInner*BW,
+      D3: bbU,
+      E1: bbU + kE1*BW,
+      E2: bbU + kE2*BW
+    };
+
+    // trend bias
+    var bias = 0;
+    if (ema20 > ema50 && ema50 > ema200) bias = 1;
+    else if (ema20 < ema50 && ema50 < ema200) bias = -1;
+    var blend = 0.35;
+    var trendNote = "均线中性排列，不做点位修正。";
+    if (bias === 1){
+      if (ema50 > bbL && ema50 < bbM){
+        lv.A2 = lv.A2*(1-blend) + ema50*blend;
+        lv.B2 = lv.B2*(1-blend) + ema50*blend;
+        trendNote = "多头排列，A2/B2 已向 EMA50 加权靠拢。";
+      } else {
+        trendNote = "多头排列，但 EMA50 不在下轨~中轨之间，未做靠拢修正。";
+      }
+      lv.E1 = bbU + kE1*BW*1.08;
+      lv.E2 = bbU + kE2*BW*1.08;
+    } else if (bias === -1){
+      if (ema50 > bbM && ema50 < bbU){
+        lv.D2 = lv.D2*(1-blend) + ema50*blend;
+        lv.D3 = lv.D3*(1-blend) + ema50*blend;
+        trendNote = "空头排列，D2/D3 已向 EMA50 加权靠拢。";
+      } else {
+        trendNote = "空头排列，但 EMA50 不在中轨~上轨之间，未做靠拢修正。";
+      }
+      lv.A1 = bbL - kA1*BW*1.08;
+    }
+
+    // conviction scoring
+    var volRatio = avgVol > 0 ? vol/avgVol : 1;
+    var buyScore = 0, sellScore = 0;
+    if (volRatio >= 1.5){ buyScore += 1; sellScore += 1; }
+    else if (volRatio < 0.8){ buyScore -= 1; sellScore -= 1; }
+    if (pcr >= 1.1){ buyScore += 1; sellScore -= 1; }
+    else if (pcr <= 0.7){ sellScore += 1; buyScore -= 1; }
+    if (ivr >= 60){ buyScore -= 0.5; sellScore -= 0.5; }
+
+    var buyMult = clampMult(buyScore);
+    var sellMult = clampMult(sellScore);
+
+    function pct(base, mult){ return Math.max(1, Math.round(base*mult)); }
+
+    var rows = [
+      {k:"E2", zone:"E", label:"强卖", price:lv.E2, alloc:pct(pE2,sellMult), mult:sellMult},
+      {k:"E1", zone:"E", label:"强卖", price:lv.E1, alloc:pct(pE1,sellMult), mult:sellMult},
+      {k:"D3", zone:"D", label:"卖出", price:lv.D3, alloc:pct(pD3,sellMult), mult:sellMult},
+      {k:"D2", zone:"D", label:"卖出", price:lv.D2, alloc:pct(pD2,sellMult), mult:sellMult},
+      {k:"D1", zone:"D", label:"卖出", price:lv.D1, alloc:pct(pD1,sellMult), mult:sellMult},
+      {k:"C2", zone:"C", label:"试仓", price:lv.C2, alloc:pct(pC2,1), mult:1},
+      {k:"C1", zone:"C", label:"试仓", price:lv.C1, alloc:pct(pC1,1), mult:1},
+      {k:"B2", zone:"B", label:"买入", price:lv.B2, alloc:pct(pB2,buyMult), mult:buyMult},
+      {k:"B1", zone:"B", label:"买入", price:lv.B1, alloc:pct(pB1,buyMult), mult:buyMult},
+      {k:"A2", zone:"A", label:"强买", price:lv.A2, alloc:pct(pA2,buyMult), mult:buyMult},
+      {k:"A1", zone:"A", label:"强买", price:lv.A1, alloc:pct(pA1,buyMult), mult:buyMult}
+    ];
+
+    return { rows:rows, lv:lv, price:price, bias:bias, trendNote:trendNote,
+             buyMult:buyMult, sellMult:sellMult, volRatio:volRatio };
+  }
+
+  function convBadge(mult){
+    if (mult >= 1.2) return '<span class="conv up">放量/情绪确认</span>';
+    if (mult <= 0.8) return '<span class="conv down">信号偏弱</span>';
+    return '<span class="conv flat">中性</span>';
+  }
+
+  function validate(){
+    var bbU = num("bbU"), bbM = num("bbM"), bbL = num("bbL"), price = num("price");
+    var msgs = [];
+    if (bbU <= bbL) msgs.push("布林带上轨应该大于下轨，检查一下这两个数字。");
+    if (!(bbL <= bbM && bbM <= bbU) && bbU > bbL) msgs.push("中轨应该落在上轨和下轨之间。");
+    if (price <= 0) msgs.push("现价还没填，或者填成了 0。");
+    return msgs;
+  }
+
+  function render(){
+    var warnSlot = $("warnSlot");
+    var problems = validate();
+    if (problems.length){
+      warnSlot.innerHTML = '<div class="warn-banner">⚠ ' + problems.join(' ') + '</div>';
+      warnSlot.style.display = "";
+    } else {
+      warnSlot.innerHTML = "";
+    }
+
+    var r = compute();
+    var ticker = ($("ticker").value || "—").trim();
+    $("tickerHeadline").textContent = ticker + " · 现价 " + fmtPrice(r.price) + " · " + r.trendNote;
+
+    var asof = ($("asof").value || "").trim();
+    $("asofHint").textContent = asof ? ("数据来源：" + asof) : "还没填数据时间/来源——超过 15 分钟的数据记得标注一下。";
+
+    var ladder = $("ladder");
+    ladder.innerHTML = "";
+    r.rows.forEach(function(row){
+      var div = document.createElement("div");
+      div.className = "rung z" + row.zone;
+
+      // current-price marker: insert above the first rung whose price is <= current price
+      div.innerHTML =
+        '<div class="tag">' + row.k + '</div>' +
+        '<div class="meta"><span class="action">' + row.label + '</span>' +
+        '<span class="sub">' + row.zone + ' 档</span></div>' +
+        '<div class="price num">' + fmtPrice(row.price) + '</div>' +
+        '<div class="alloc num">' + row.alloc + '%</div>' +
+        convBadge(row.mult);
+      ladder.appendChild(div);
+    });
+
+    // place current-price marker
+    var rungEls = ladder.querySelectorAll(".rung");
+    var placed = false;
+    for (var i=0;i<r.rows.length;i++){
+      if (r.price >= r.rows[i].price){
+        var marker = document.createElement("div");
+        marker.className = "marker";
+        marker.innerHTML = '<span class="lbl">现价 ' + fmtPrice(r.price) + '</span>';
+        rungEls[i].appendChild(marker);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed && rungEls.length){
+      var marker2 = document.createElement("div");
+      marker2.className = "marker";
+      marker2.style.top = "auto";
+      marker2.style.bottom = "-1px";
+      marker2.innerHTML = '<span class="lbl">现价 ' + fmtPrice(r.price) + '</span>';
+      rungEls[rungEls.length-1].appendChild(marker2);
+    }
+
+    $("bannerTop").innerHTML = "价格高于 " + fmtPrice(r.lv.E2) + "（E2）→ 不追高，保留 10% 现金观望";
+    $("bannerBottom").innerHTML = "价格低于 " + fmtPrice(r.lv.A1) + "（A1）→ 保留 10% 现金应对超预期下跌";
+  }
+
+  // ---- history (localStorage) ----
+  var HKEY = "jackal_ladder_history_v1";
+  function readHist(){
+    try { return JSON.parse(localStorage.getItem(HKEY) || "[]"); } catch(e){ return []; }
+  }
+  function writeHist(list){
+    try { localStorage.setItem(HKEY, JSON.stringify(list)); } catch(e){}
+  }
+  function renderHist(){
+    var list = readHist();
+    var box = $("histList");
+    if (!list.length){ box.innerHTML = '<p class="empty">还没有保存过快照。</p>'; return; }
+    box.innerHTML = "";
+    list.slice().reverse().forEach(function(item, idxRev){
+      var idx = list.length - 1 - idxRev;
+      var row = document.createElement("div");
+      row.className = "hist-row";
+      row.innerHTML =
+        '<span class="t">' + item.ticker + '</span>' +
+        '<span class="d">' + item.date + ' · 现价 ' + fmtPrice(item.price) +
+        ' · A1 ' + fmtPrice(item.a1) + ' / E2 ' + fmtPrice(item.e2) + '</span>' +
+        '<span style="display:flex; gap:6px;">' +
+        '<button data-load="' + idx + '">载入</button>' +
+        '<button data-idx="' + idx + '">删除</button>' +
+        '</span>';
+      box.appendChild(row);
+    });
+    box.querySelectorAll("button[data-idx]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var list2 = readHist();
+        list2.splice(parseInt(btn.getAttribute("data-idx"),10), 1);
+        writeHist(list2);
+        renderHist();
+      });
+    });
+    box.querySelectorAll("button[data-load]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var list2 = readHist();
+        var item = list2[parseInt(btn.getAttribute("data-load"),10)];
+        if (item && item.raw){ applyState(item.raw); render(); saveLastState(); }
+      });
+    });
+  }
+
+  function saveSnapshot(){
+    var r = compute();
+    var list = readHist();
+    list.push({
+      ticker: ($("ticker").value||"—").trim(),
+      date: new Date().toISOString().slice(0,16).replace("T"," "),
+      price: r.price, a1: r.lv.A1, e2: r.lv.E2,
+      raw: ids.reduce(function(acc,id){ acc[id]=$(id).value; return acc; }, {})
+    });
+    if (list.length > 200) list = list.slice(list.length-200);
+    writeHist(list);
+    renderHist();
+  }
+
+  function exportText(){
+    var list = readHist();
+    var lines = list.map(function(item){
+      return [item.date, item.ticker, "现价="+item.price, "A1="+item.a1.toFixed(2), "E2="+item.e2.toFixed(2)].join(" | ");
+    });
+    var text = lines.length ? lines.join("\n") : "（没有记录）";
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); $("btnExport").textContent = "已复制到剪贴板"; }
+    catch(e){ $("btnExport").textContent = "复制失败，请手动选取"; }
+    document.body.removeChild(ta);
+    setTimeout(function(){ $("btnExport").textContent = "导出为文本"; }, 1600);
+  }
+
+  ids.forEach(function(id){
+    var el = $(id);
+    if (el) el.addEventListener("input", function(){ render(); saveLastState(); });
+  });
+  $("btnSample").addEventListener("click", function(){ loadSample(); render(); saveLastState(); });
+  $("btnSave").addEventListener("click", saveSnapshot);
+  $("btnExport").addEventListener("click", exportText);
+  $("btnClearHist").addEventListener("click", function(){ writeHist([]); renderHist(); });
+
+  var restored = restoreLastState();
+  $("restoreNote").textContent = restored ? "已载入你上次填写的数据" : "";
+  render();
+  renderHist();
+})();
+</script>
+</body>
+</html>
 
