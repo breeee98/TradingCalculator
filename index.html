@@ -228,6 +228,10 @@
   .empty{color:var(--ink-faint); font-size:12.5px; padding:6px 2px;}
 
   footer.note{margin-top:26px; font-size:11.5px; color:var(--ink-faint); text-align:center;}
+  button:disabled{opacity:.6;cursor:wait;}
+  .fetch-status{font-size:12.5px;color:var(--ink-muted);margin:12px 0 4px;overflow-wrap:anywhere;}
+  .fetch-status[data-state="error"]{color:var(--bad);}
+  .fetch-status[data-state="success"]{color:var(--good);}
 </style>
 </head>
 <body>
@@ -236,7 +240,7 @@
   <header class="page">
     <p class="eyebrow">Bree 的小工具箱</p>
     <h1>点位阶梯计算器</h1>
-    <p class="lede">输入布林带 / EMA / 成交量 / 期权数据，改动任何一个数字都会立即重新算出 A–E 五档风险点位和建议仓位比例，不用点按钮。所有价格数据由你手动填入——本工具只做计算，不抓取也不猜测行情。</p>
+    <p class="lede">输入布林带 / EMA / 成交量 / 期权数据，改动任何一个数字都会立即重新算出 A–E 五档风险点位和建议仓位比例，不用点按钮。输入股票代码后，点击“自动获取行情”可填入价格、布林带、EMA 和成交量；也可以继续手动修改。Put/Call 比和 IV Rank 需自行填写。</p>
   </header>
 
   <section class="card">
@@ -245,7 +249,7 @@
     <div class="ticker-row">
       <div class="field ticker" style="width:110px;">
         <label for="ticker">代码</label>
-        <input id="ticker" value="示例" maxlength="10">
+        <input id="ticker" value="示例" maxlength="32">
       </div>
       <div class="field" style="width:130px;">
         <label for="price">现价</label>
@@ -291,10 +295,13 @@
     </div>
 
     <div class="btn-row">
+      <button class="primary" type="button" id="btnFetch" aria-describedby="fetchStatus">自动获取行情</button>
       <button class="ghost" id="btnSample">载入示例数据</button>
       <button class="primary" id="btnSave">保存这次快照</button>
       <span class="live-badge" id="restoreNote"></span>
     </div>
+    <p class="fetch-status" id="fetchStatus" role="status" aria-live="polite" aria-atomic="true">输入代码（如 MU、AAPL、NVDA）后点击“自动获取行情”。指标采用日线数据。</p>
+    <p class="hint">期权情绪不会自动更新：切换股票后，请核对 Put/Call 比和 IV Rank。</p>
   </section>
 
   <section>
@@ -385,6 +392,7 @@
   function num(id){ var v = parseFloat($(id).value); return isNaN(v) ? 0 : v; }
 
   function loadSample(){
+    cancelMarketFetch();
     Object.keys(SAMPLE).forEach(function(k){
       var el = $(k);
       if (el) el.value = SAMPLE[k];
@@ -392,6 +400,7 @@
   }
 
   function applyState(state){
+    cancelMarketFetch();
     Object.keys(state).forEach(function(k){
       var el = $(k);
       if (el && state[k] !== undefined && state[k] !== null) el.value = state[k];
@@ -654,9 +663,114 @@
     setTimeout(function(){ $("btnExport").textContent = "导出为文本"; }, 1600);
   }
 
+  // Fetch is transactional: validate everything before changing any input.
+  var marketRequest = null;
+  function marketStatus(message, state){
+    $("fetchStatus").textContent = message;
+    $("fetchStatus").setAttribute("data-state", state || "");
+  }
+  function resetMarketButton(){
+    $("btnFetch").disabled = false;
+    $("btnFetch").textContent = "自动获取行情";
+    $("btnFetch").removeAttribute("aria-busy");
+  }
+  function cancelMarketFetch(){
+    if (!marketRequest) return;
+    var old = marketRequest;
+    marketRequest = null;
+    clearTimeout(old.timer);
+    old.controller.abort();
+    resetMarketButton();
+    marketStatus("输入已改变，本次获取已取消。可重新点击获取行情。");
+  }
+  function marketNumber(value, label, positive){
+    if ((typeof value !== "number" && typeof value !== "string") ||
+        (typeof value === "string" && !value.trim())){
+      throw new Error(label + "缺失，请检查行情服务返回的数据。");
+    }
+    var n = Number(value);
+    if (!Number.isFinite(n) || (positive ? n <= 0 : n < 0)){
+      throw new Error(label + "无效，请检查行情服务返回的数据。");
+    }
+    return n;
+  }
+  async function fetchMarketData(){
+    if (marketRequest) return;
+    var ticker = $("ticker").value.trim().toUpperCase();
+    if (!ticker || !/^[A-Z0-9^][A-Z0-9.\/=:^_-]{0,31}$/.test(ticker)){
+      marketStatus("请先输入有效的股票代码，例如 MU、AAPL 或 NVDA。", "error");
+      $("ticker").focus();
+      return;
+    }
+    var request = {controller:new AbortController(), timedOut:false};
+    marketRequest = request;
+    $("btnFetch").disabled = true;
+    $("btnFetch").textContent = "获取中…";
+    $("btnFetch").setAttribute("aria-busy", "true");
+    marketStatus("正在获取 " + ticker + " 的行情…");
+    request.timer = setTimeout(function(){
+      request.timedOut = true;
+      request.controller.abort();
+    }, 20000);
+    try {
+      var response = await fetch(
+        "https://trading-api.duyuqin1998.workers.dev/?symbol=" + encodeURIComponent(ticker),
+        {signal:request.controller.signal, cache:"no-store", credentials:"omit"}
+      );
+      var data;
+      try { data = await response.json(); }
+      catch(parseError){
+        if (request.controller.signal.aborted) throw parseError;
+        throw new Error(response.ok ? "行情服务未返回有效 JSON，请稍后重试。" : "行情服务请求失败（HTTP " + response.status + "）。");
+      }
+      if (!response.ok || (data && (data.status === "error" || data.error))){
+        var detail = data && typeof data.message === "string" ? data.message.slice(0,240) : "";
+        throw new Error((response.status === 429 ? "请求次数已达上限，请稍后重试。" : "行情服务请求失败（HTTP " + response.status + "）。") + (detail ? " " + detail : ""));
+      }
+      if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("行情服务返回的数据格式不正确。");
+      if (typeof data.symbol !== "string" || data.symbol.trim().toUpperCase() !== ticker){
+        throw new Error("返回的股票代码与请求不一致，未填入行情。");
+      }
+      var bands = data.Bollinger_Bands || {};
+      var values = {
+        price:marketNumber(data.price, "现价", true),
+        bbU:marketNumber(bands.upper, "布林带上轨", false),
+        bbM:marketNumber(bands.middle, "布林带中轨", false),
+        bbL:marketNumber(bands.lower, "布林带下轨", false),
+        ema20:marketNumber(data.EMA_20, "EMA20", true),
+        ema50:marketNumber(data.EMA_50, "EMA50", true),
+        ema200:marketNumber(data.EMA_200, "EMA200", true),
+        vol:marketNumber(data.volume, "当日成交量", false),
+        avgVol:marketNumber(data.average_volume_20, "20日平均成交量", false)
+      };
+      if (!(values.bbU > values.bbL && values.bbL <= values.bbM && values.bbM <= values.bbU)){
+        throw new Error("布林带上下轨或中轨顺序异常，未填入行情。");
+      }
+      if (marketRequest !== request) return;
+      if ($("ticker").value.trim().toUpperCase() !== ticker){ cancelMarketFetch(); return; }
+      Object.keys(values).forEach(function(id){ $(id).value = values[id]; });
+      $("ticker").value = ticker;
+      $("asof").value = "Twelve Data · " + ticker + " · 日线指标 · 获取于 " + new Date().toLocaleString("zh-CN") + "（行情时间未提供）";
+      render();
+      saveLastState();
+      $("restoreNote").textContent = "";
+      marketStatus(ticker + " 行情已填入，点位已重新计算。Put/Call 比和 IV Rank 保留原值，请自行核对。", "success");
+    } catch(err){
+      if (marketRequest !== request) return;
+      var message = request.timedOut ? "请求超过 20 秒，请稍后重试。" :
+        err instanceof TypeError ? "无法连接行情服务，请检查网络及服务的跨域设置后重试。" : err.message;
+      marketStatus("获取失败：" + message + " 原有输入未更改。", "error");
+    } finally {
+      clearTimeout(request.timer);
+      if (marketRequest === request){ marketRequest = null; resetMarketButton(); }
+    }
+  }
+  $("btnFetch").addEventListener("click", fetchMarketData);
+
+
   ids.forEach(function(id){
     var el = $(id);
-    if (el) el.addEventListener("input", function(){ render(); saveLastState(); });
+    if (el) el.addEventListener("input", function(){ cancelMarketFetch(); render(); saveLastState(); });
   });
   $("btnSample").addEventListener("click", function(){ loadSample(); render(); saveLastState(); });
   $("btnSave").addEventListener("click", saveSnapshot);
@@ -671,4 +785,3 @@
 </script>
 </body>
 </html>
-
