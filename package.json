@@ -1,0 +1,12 @@
+{
+  "name": "trading-calculator",
+  "version": "2.0.0",
+  "private": true,
+  "description": "点位阶梯计算器：A–E 阶梯、止盈分析与只读 JSON 接口（同一套核心算法）",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "analyze": "node cli/analyze.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED"
+}
