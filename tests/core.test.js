@@ -299,3 +299,17 @@ test("指标：布林带/EMA/均量与逐步手算一致，均量不含当日", 
   assert.equal(ind.vol, 1259);
   assert.equal(C.indicatorsFromBars(bars.slice(0, 100)).ema200, null);
 });
+
+test("指标：与第三方实现（R TTR::BBands，plotly 数据集自带列）逐日一致", () => {
+  const fs = require("fs");
+  const { splitCsvLine } = require("../cli/csv.js");
+  const rows = fs.readFileSync(__dirname + "/fixtures/aapl_2015_2017.csv", "utf8").trim().split("\n").slice(1).map(splitCsvLine);
+  // 该数据集的 dn/mavg/up 是 TTR::BBands(HLC, n=20, sd=2) 的结果，使用典型价 (H+L+C)/3、总体标准差
+  const bars = rows.map((c) => ({ date: c[0], close: (+c[2] + +c[3] + +c[4]) / 3, volume: +c[5] }));
+  let max = 0;
+  for (let i = 19; i < rows.length; i++) {
+    const ind = C.indicatorsFromBars(bars.slice(0, i + 1));
+    max = Math.max(max, Math.abs(ind.bbM - +rows[i][8]), Math.abs(ind.bbU - +rows[i][9]), Math.abs(ind.bbL - +rows[i][7]));
+  }
+  assert.ok(max < 1e-6, "最大偏差 " + max);
+});

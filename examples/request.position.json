@@ -1,0 +1,17 @@
+{
+  "market": {
+    "ticker": "AAPL",
+    "barsCsv": "../tests/fixtures/aapl_2015_2017.csv",
+    "pcr": 0.65,
+    "ivr": 35,
+    "provenance": { "market": { "kind": "manual", "ticker": "AAPL", "source": "CSV 示例", "barDate": "2017-02-16" }, "options": { "kind": "manual", "ticker": "AAPL", "source": "示例数值" } }
+  },
+  "position": {
+    "accountType": "swing",
+    "shares": 50,
+    "avgCost": 110,
+    "events": [{ "date": "2017-02-20", "type": "other", "label": "示例事件" }],
+    "exitPlan": { "text": "示例：跌破 EMA50 减半", "targets": [140], "keepCorePct": 0 }
+  },
+  "now": "2017-02-16T21:00:00Z"
+}

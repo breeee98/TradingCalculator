@@ -1,0 +1,9 @@
+{
+  "market": {
+    "ticker": "AAPL",
+    "barsCsv": "../tests/fixtures/aapl_2015_2017.csv",
+    "pcr": null,
+    "ivr": null
+  },
+  "now": "2017-02-16T21:00:00Z"
+}
