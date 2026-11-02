@@ -15,7 +15,7 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  var VERSION = "2.0.0";
+  var VERSION = "2.1.0";
   var SCHEMA = "tradingcalculator.analysis.v1";
 
   // ---------------------------------------------------------------- 常量
@@ -129,8 +129,17 @@
    */
   function normalizeInput(raw) {
     raw = raw || {};
-    var out = { ticker: normTicker(raw.ticker) };
-    NUM_FIELDS.forEach(function (f) { out[f] = parseNum(raw[f]); });
+    var out = { ticker: normTicker(raw.ticker), invalidRaw: {} };
+    NUM_FIELDS.forEach(function (f) {
+      out[f] = parseNum(raw[f]);
+      // 区分“没填”和“填了但不是数字”：两者都是 null，但后者要提示“无效值”
+      var r = raw[f];
+      var filled = r !== null && r !== undefined && !(typeof r === "string" && !r.trim());
+      if (filled && out[f] === null) out.invalidRaw[f] = String(r).slice(0, 40);
+    });
+    if (raw.invalidRaw && typeof raw.invalidRaw === "object") {
+      Object.keys(raw.invalidRaw).forEach(function (f) { if (out[f] === null && NUM_FIELDS.indexOf(f) >= 0) out.invalidRaw[f] = raw.invalidRaw[f]; });
+    }
     var c = raw.coeffs || {};
     out.coeffs = {};
     Object.keys(DEFAULT_COEFFS).forEach(function (k) {
@@ -186,17 +195,27 @@
    */
   function validateInput(inp, now) {
     var errors = [], warnings = [], status = {};
-    NUM_FIELDS.forEach(function (f) { status[f] = inp[f] === null ? "missing" : "ok"; });
+    var invalidRaw = inp.invalidRaw || {};
+    var OPTIONAL_AUX = ["pcr", "ivr"];
+    NUM_FIELDS.forEach(function (f) {
+      status[f] = invalidRaw[f] !== undefined ? "invalid" : inp[f] === null ? "missing" : "ok";
+      if (invalidRaw[f] !== undefined && OPTIONAL_AUX.indexOf(f) < 0) {
+        var m = msg("NOT_A_NUMBER", FIELD_LABEL[f] + "“" + invalidRaw[f] + "”不是有效数字。", f);
+        if (["price", "bbU", "bbM", "bbL"].indexOf(f) >= 0) errors.push(m); else warnings.push(m);
+      }
+    });
     function bad(f, code, text) { status[f] = "invalid"; errors.push(msg(code, text, f)); }
+    // 期权情绪是可选辅助：无效时只提示并跳过，不阻断阶梯计算
+    function skipOpt(f, code, text) { status[f] = "invalid"; warnings.push(msg(code, text, f)); }
 
     if (!inp.ticker) warnings.push(msg("TICKER_MISSING", "未填写股票代码。", "ticker"));
     else if (!isValidTicker(inp.ticker) && inp.ticker !== "示例") warnings.push(msg("TICKER_FORMAT", "股票代码格式看起来不对：" + inp.ticker, "ticker"));
 
-    if (inp.price === null) errors.push(msg("REQUIRED", "现价缺失。", "price"));
+    if (inp.price === null) { if (invalidRaw.price === undefined) errors.push(msg("REQUIRED", "现价缺失。", "price")); }
     else if (inp.price <= 0) bad("price", "NON_POSITIVE", "现价必须大于 0。");
 
     ["bbU", "bbM", "bbL"].forEach(function (f) {
-      if (inp[f] === null) errors.push(msg("REQUIRED", FIELD_LABEL[f] + "缺失。", f));
+      if (inp[f] === null) { if (invalidRaw[f] === undefined) errors.push(msg("REQUIRED", FIELD_LABEL[f] + "缺失。", f)); }
       else if (inp[f] <= 0) bad(f, "NON_POSITIVE", FIELD_LABEL[f] + "必须大于 0。");
     });
     if (inp.bbU !== null && inp.bbL !== null && inp.bbU > 0 && inp.bbL > 0) {
@@ -214,11 +233,12 @@
     if (inp.avgVol === 0) { status.avgVol = "invalid"; warnings.push(msg("ZERO", "20日均量为 0，量能评分跳过。", "avgVol")); }
     if (inp.vol === null || inp.avgVol === null) warnings.push(msg("MISSING", "成交量数据缺失，量能评分跳过（记为未知，不是中性 0）。", inp.vol === null ? "vol" : "avgVol"));
 
-    if (inp.pcr === null) warnings.push(msg("MISSING", "Put/Call 比缺失，期权情绪按未知处理。", "pcr"));
-    else if (inp.pcr <= 0) bad("pcr", "NON_POSITIVE", "Put/Call 比必须大于 0。");
-    else if (inp.pcr > 5) warnings.push(msg("UNUSUAL", "Put/Call 比 " + inp.pcr + " 异常偏高，请确认没有填错（常见范围 0.3–2）。", "pcr"));
-    if (inp.ivr === null) warnings.push(msg("MISSING", "IV Rank 缺失，事件风险按未知处理。", "ivr"));
-    else if (inp.ivr < 0 || inp.ivr > 100) bad("ivr", "RANGE", "IV Rank 必须在 0–100 之间。");
+    // 期权情绪（可选辅助）：没填 = 跳过，不提示；填了无效值 = 跳过并提示；真实的 0 保留
+    if (invalidRaw.pcr !== undefined) skipOpt("pcr", "OPTION_INVALID", "Put/Call 比“" + invalidRaw.pcr + "”不是有效数字，已跳过（不会当成 0）。");
+    else if (inp.pcr !== null && inp.pcr < 0) skipOpt("pcr", "OPTION_INVALID", "Put/Call 比不能为负，已跳过。");
+    else if (inp.pcr !== null && inp.pcr > 5) warnings.push(msg("UNUSUAL", "Put/Call 比 " + inp.pcr + " 异常偏高，请确认没有填错（常见范围 0.3–2）。", "pcr"));
+    if (invalidRaw.ivr !== undefined) skipOpt("ivr", "OPTION_INVALID", "IV Rank“" + invalidRaw.ivr + "”不是有效数字，已跳过（不会当成 0）。");
+    else if (inp.ivr !== null && (inp.ivr < 0 || inp.ivr > 100)) skipOpt("ivr", "OPTION_INVALID", "IV Rank 应在 0–100 之间，" + inp.ivr + " 已跳过。");
 
     // 系数与比例
     Object.keys(inp.coeffs).forEach(function (k) {
@@ -255,13 +275,13 @@
     }
     if (pv.market.kind === "demo") warnings.push(msg("DEMO_DATA", "当前是演示数据，不是真实行情。", "price"));
     if (inp.ticker && pv.options.ticker && pv.options.ticker !== inp.ticker && (inp.pcr !== null || inp.ivr !== null)) {
-      errors.push(msg("OPTIONS_TICKER_MISMATCH", "期权数据属于 " + pv.options.ticker + "，不能用于 " + inp.ticker + "。", "pcr"));
+      warnings.push(msg("OPTIONS_TICKER_MISMATCH", "期权数据属于 " + pv.options.ticker + "，不能用于 " + inp.ticker + "，已跳过。", "pcr"));
       if (inp.pcr !== null) status.pcr = "invalid";
       if (inp.ivr !== null) status.ivr = "invalid";
     }
     if (pv.market.partialBar) warnings.push(msg("PARTIAL_BAR", "最后一根日线盘中未完结：当日成交量不完整，量能评分已跳过。", "vol"));
     else if (pv.market.maybePartialBar) warnings.push(msg("MAYBE_PARTIAL_BAR", "在美股交易时段内获取：当日成交量可能还没走完，量比可能偏低。", "vol"));
-    if ((inp.pcr !== null || inp.ivr !== null) && !pv.options.ticker && pv.options.kind !== "demo") {
+    if ((status.pcr === "ok" || status.ivr === "ok") && !pv.options.ticker && pv.options.kind !== "demo") {
       warnings.push(msg("OPTIONS_SOURCE_UNKNOWN", "期权数据没有记录所属股票和来源，请确认是 " + (inp.ticker || "当前股票") + " 的最新数据。", "pcr"));
     }
 
@@ -403,53 +423,93 @@
     return 1.0;
   }
 
+  // 期权情绪（可选辅助）的暂定参数：只做相对调整，不改变点位，不单独触发买卖。未经回测。
+  var OPTION_AUX = { pcrHigh: 1.1, pcrLow: 0.7, ivrHigh: 60, pcrStepPct: 3, ivrStepPct: 2, capPct: 5 };
+
   /**
-   * 量能 / 期权情绪评分。规则与原版相同；缺失项记为 missing，不参与计分，
-   * 也不会被当成“比值 0”触发任何规则。
+   * 仓位强弱评分，分两层：
+   *  1) 技术面（主要依据）：成交量。规则与原版相同：量比 ≥ 1.5 放量 ×1.3，< 0.8 缩量 ×0.6，否则 ×1.0。
+   *  2) 期权情绪（可选辅助）：在技术面乘数之上做相对调整，合计限制在 ±5%。
+   *       Put/Call ≥ 1.1：买入 +3%、卖出 −3%；Put/Call ≤ 0.7：买入 −3%、卖出 +3%；IV Rank ≥ 60：两侧 −2%。
+   *     “相对”指乘在技术面比例上：20% × 1.05 = 21%，不是 25%。
+   * 缺失或无效的项目记为跳过，不会被当成 0；只填一项就只用这一项；全部缺失 = 纯技术面。
    */
-  function scoreConviction(inp) {
+  function scoreConviction(inp, ctx) {
+    ctx = ctx || {};
+    var status = ctx.fieldStatus || {};
+    var mismatch = ctx.optionsMismatch === true;
     var comps = [];
     var buy = 0, sell = 0;
     var volRatio = null;
     var partial = inp.provenance && inp.provenance.market.partialBar;
     if (inp.vol === null || inp.avgVol === null || !(inp.avgVol > 0) || inp.vol < 0) {
-      comps.push({ factor: "volume", status: "missing", value: null, buy: 0, sell: 0, reason: "成交量或20日均量缺失，跳过。" });
+      comps.push({ factor: "volume", role: "technical", status: "missing", value: null, buy: 0, sell: 0, reason: "成交量或20日均量缺失，跳过。" });
     } else if (partial) {
       volRatio = inp.vol / inp.avgVol;
-      comps.push({ factor: "volume", status: "partial", value: round(volRatio, 3), buy: 0, sell: 0, reason: "当日K线盘中未完结，量比 " + round(volRatio, 2) + " 不可靠，跳过。" });
+      comps.push({ factor: "volume", role: "technical", status: "partial", value: round(volRatio, 3), buy: 0, sell: 0, reason: "当日K线盘中未完结，量比 " + round(volRatio, 2) + " 不可靠，跳过。" });
     } else {
       volRatio = inp.vol / inp.avgVol;
-      var c = { factor: "volume", status: "ok", value: round(volRatio, 3), buy: 0, sell: 0 };
-      if (volRatio >= 1.5) { c.buy = 1; c.sell = 1; c.reason = "量比 " + round(volRatio, 2) + " ≥ 1.5，放量，买卖两侧都加强。"; }
-      else if (volRatio < 0.8) { c.buy = -1; c.sell = -1; c.reason = "量比 " + round(volRatio, 2) + " < 0.8，缩量，两侧都减弱。"; }
-      else c.reason = "量比 " + round(volRatio, 2) + " 在 0.8–1.5 之间，中性。";
+      var c = { factor: "volume", role: "technical", status: "ok", value: round(volRatio, 3), buy: 0, sell: 0 };
+      if (volRatio >= 1.5) { c.buy = 1; c.sell = 1; c.reason = "量比 " + round(volRatio, 2) + " ≥ 1.5，放量，买卖两侧都加强（×1.3）。"; }
+      else if (volRatio < 0.8) { c.buy = -1; c.sell = -1; c.reason = "量比 " + round(volRatio, 2) + " < 0.8，缩量，两侧都减弱（×0.6）。"; }
+      else c.reason = "量比 " + round(volRatio, 2) + " 在 0.8–1.5 之间，中性（×1.0）。";
       buy += c.buy; sell += c.sell; comps.push(c);
     }
-    if (inp.pcr === null) {
-      comps.push({ factor: "putCall", status: "missing", value: null, buy: 0, sell: 0, reason: "Put/Call 比缺失，按未知处理（不是 0）。" });
-    } else {
-      var p = { factor: "putCall", status: "ok", value: inp.pcr, buy: 0, sell: 0 };
-      if (inp.pcr >= 1.1) { p.buy = 1; p.sell = -1; p.reason = "Put/Call " + inp.pcr + " ≥ 1.1，恐慌性买 put，低位反向看多。"; }
-      else if (inp.pcr <= 0.7) { p.buy = -1; p.sell = 1; p.reason = "Put/Call " + inp.pcr + " ≤ 0.7，追涨买 call，高位偏谨慎。"; }
-      else p.reason = "Put/Call " + inp.pcr + " 在 0.7–1.1 之间，中性。";
-      buy += p.buy; sell += p.sell; comps.push(p);
+    var techBuyMult = clampMult(buy), techSellMult = clampMult(sell);
+
+    // ---- 期权情绪（可选辅助）
+    var used = [], skipped = [];
+    var rawBuyPct = 0, rawSellPct = 0;
+    function skipReason(f) {
+      if (status[f] === "invalid") return mismatch ? "属于其他股票，已跳过" : "无效值，已跳过";
+      return "未填写，已跳过";
     }
-    if (inp.ivr === null) {
-      comps.push({ factor: "ivRank", status: "missing", value: null, buy: 0, sell: 0, reason: "IV Rank 缺失，按未知处理。" });
+    var pcrOk = inp.pcr !== null && status.pcr !== "invalid";
+    if (!pcrOk) {
+      var rp = skipReason("pcr");
+      comps.push({ factor: "putCall", role: "optionsAux", status: status.pcr === "invalid" ? "invalid" : "missing", value: null, buyPct: 0, sellPct: 0, reason: "Put/Call 比" + rp + "。" });
+      skipped.push({ factor: "putCall", label: "Put/Call 比", reason: rp });
     } else {
-      var v = { factor: "ivRank", status: "ok", value: inp.ivr, buy: 0, sell: 0 };
-      if (inp.ivr >= 60) { v.buy = -0.5; v.sell = -0.5; v.reason = "IV Rank " + inp.ivr + " ≥ 60，事件风险偏高，两侧仓位略降。"; }
-      else v.reason = "IV Rank " + inp.ivr + " < 60，无调整。";
-      buy += v.buy; sell += v.sell; comps.push(v);
+      var p = { factor: "putCall", role: "optionsAux", status: "ok", value: inp.pcr, buyPct: 0, sellPct: 0 };
+      if (inp.pcr >= OPTION_AUX.pcrHigh) { p.buyPct = OPTION_AUX.pcrStepPct; p.sellPct = -OPTION_AUX.pcrStepPct; p.reason = "Put/Call " + inp.pcr + " ≥ 1.1（偏恐慌）：买入侧 +3%、卖出侧 −3%（相对调整）。"; }
+      else if (inp.pcr <= OPTION_AUX.pcrLow) { p.buyPct = -OPTION_AUX.pcrStepPct; p.sellPct = OPTION_AUX.pcrStepPct; p.reason = "Put/Call " + inp.pcr + " ≤ 0.7（偏追涨）：买入侧 −3%、卖出侧 +3%（相对调整）。"; }
+      else p.reason = "Put/Call " + inp.pcr + " 在 0.7–1.1 之间，不调整。";
+      rawBuyPct += p.buyPct; rawSellPct += p.sellPct; comps.push(p);
+      used.push({ factor: "putCall", label: "Put/Call 比", value: inp.pcr, buyPct: p.buyPct, sellPct: p.sellPct });
     }
-    var known = comps.filter(function (x) { return x.status === "ok"; }).length;
+    var ivrOk = inp.ivr !== null && status.ivr !== "invalid";
+    if (!ivrOk) {
+      var ri = skipReason("ivr");
+      comps.push({ factor: "ivRank", role: "optionsAux", status: status.ivr === "invalid" ? "invalid" : "missing", value: null, buyPct: 0, sellPct: 0, reason: "IV Rank " + ri + "。" });
+      skipped.push({ factor: "ivRank", label: "IV Rank", reason: ri });
+    } else {
+      var v = { factor: "ivRank", role: "optionsAux", status: "ok", value: inp.ivr, buyPct: 0, sellPct: 0 };
+      if (inp.ivr >= OPTION_AUX.ivrHigh) { v.buyPct = -OPTION_AUX.ivrStepPct; v.sellPct = -OPTION_AUX.ivrStepPct; v.reason = "IV Rank " + inp.ivr + " ≥ 60（事件风险偏高）：买卖两侧各 −2%（相对调整）。"; }
+      else v.reason = "IV Rank " + inp.ivr + " < 60，不调整。";
+      rawBuyPct += v.buyPct; rawSellPct += v.sellPct; comps.push(v);
+      used.push({ factor: "ivRank", label: "IV Rank", value: inp.ivr, buyPct: v.buyPct, sellPct: v.sellPct });
+    }
+    var cap = OPTION_AUX.capPct;
+    var buyPct = Math.max(-cap, Math.min(cap, rawBuyPct));
+    var sellPct = Math.max(-cap, Math.min(cap, rawSellPct));
+    var optionsAux = {
+      used: used, skipped: skipped,
+      buyAdjPct: buyPct, sellAdjPct: sellPct, capPct: cap,
+      capped: buyPct !== rawBuyPct || sellPct !== rawSellPct,
+      mode: used.length ? "technical+optionsAux" : "technicalOnly",
+      note: used.length ? "期权情绪仅对技术面算出的仓位比例做 ±" + cap + "% 以内的相对调整，不改变点位，不单独触发买卖；参数为暂定值，未经回测。"
+        : "没有可用的期权数据，完全按技术面计算。"
+    };
     return {
-      buyScore: buy, sellScore: sell,
-      buyMult: clampMult(buy), sellMult: clampMult(sell),
+      // 技术面
+      buyScore: buy, sellScore: sell, techBuyMult: techBuyMult, techSellMult: techSellMult,
+      // 最终用于仓位比例的乘数 = 技术面 × (1 + 期权调整%)
+      buyMult: round(techBuyMult * (1 + buyPct / 100), 6), sellMult: round(techSellMult * (1 + sellPct / 100), 6),
       volRatio: volRatio === null ? null : round(volRatio, 4),
       components: comps,
-      completeness: known + "/3",
-      knownFactors: known
+      optionsAux: optionsAux,
+      completeness: comps.filter(function (x) { return x.status === "ok"; }).length + "/3",
+      knownFactors: comps.filter(function (x) { return x.status === "ok"; }).length
     };
   }
 
@@ -538,9 +598,10 @@
       if (x.status !== "ok") return;
       if (x.factor === "volume" && x.value >= 1.5) c.push({ id: "VOLUME_SPIKE", side: "confirm", label: "放量（量比 " + round(x.value, 2) + "）", evidence: { volRatio: x.value } });
       if (x.factor === "volume" && x.value < 0.8) c.push({ id: "VOLUME_DRY", side: "weaken", label: "缩量（量比 " + round(x.value, 2) + "）", evidence: { volRatio: x.value } });
-      if (x.factor === "putCall" && x.value >= 1.1) c.push({ id: "PCR_FEAR", side: "buy", label: "Put/Call 偏高（恐慌）", evidence: { pcr: x.value } });
-      if (x.factor === "putCall" && x.value <= 0.7) c.push({ id: "PCR_GREED", side: "sell", label: "Put/Call 偏低（追涨）", evidence: { pcr: x.value } });
-      if (x.factor === "ivRank" && x.value >= 60) c.push({ id: "IV_ELEVATED", side: "risk", label: "IV Rank 偏高（事件风险）", evidence: { ivr: x.value } });
+      // 期权情绪只作辅助参考：side = "aux"，不作为买卖候选
+      if (x.factor === "putCall" && x.value >= 1.1) c.push({ id: "PCR_FEAR", side: "aux", label: "Put/Call 偏高（偏恐慌，辅助参考，不单独触发买卖）", evidence: { pcr: x.value } });
+      if (x.factor === "putCall" && x.value <= 0.7) c.push({ id: "PCR_GREED", side: "aux", label: "Put/Call 偏低（偏追涨，辅助参考，不单独触发买卖）", evidence: { pcr: x.value } });
+      if (x.factor === "ivRank" && x.value >= 60) c.push({ id: "IV_ELEVATED", side: "aux", label: "IV Rank 偏高（事件风险，辅助参考）", evidence: { ivr: x.value } });
     });
     if (lev.alignment === "bull") c.push({ id: "TREND_BULL", side: "info", label: "EMA20 > EMA50 > EMA200 多头排列", evidence: { ema20: inp.ema20, ema50: inp.ema50, ema200: inp.ema200 } });
     if (lev.alignment === "bear") c.push({ id: "TREND_BEAR", side: "info", label: "EMA20 < EMA50 < EMA200 空头排列", evidence: { ema20: inp.ema20, ema50: inp.ema50, ema200: inp.ema200 } });
@@ -584,14 +645,11 @@
       result.errors.push(msg("LADDER_ORDER", "档位顺序异常：" + lev.orderViolations.map(function (v) { return v.lower + " ≥ " + v.upper; }).join("，") + "。请检查布林带或系数。"));
       return result;
     }
-    // 有期权数据串号时，不能让错误的期权数据参与评分
-    var scoringInput = inp;
-    if (val.fieldStatus.pcr === "invalid" || val.fieldStatus.ivr === "invalid") {
-      scoringInput = assign({}, inp);
-      if (val.fieldStatus.pcr === "invalid") scoringInput.pcr = null;
-      if (val.fieldStatus.ivr === "invalid") scoringInput.ivr = null;
-    }
-    var conv = scoreConviction(scoringInput);
+    // 无效或属于其他股票的期权数据在评分里跳过（不影响点位）
+    var conv = scoreConviction(inp, {
+      fieldStatus: val.fieldStatus,
+      optionsMismatch: val.warnings.some(function (w) { return w.code === "OPTIONS_TICKER_MISMATCH"; })
+    });
     var alloc = allocateTiers(inp.alloc, conv, inp.options);
     var rows = LEVEL_ORDER.slice().reverse().map(function (k) {
       var meta = LEVEL_META[k];
@@ -599,6 +657,7 @@
       return {
         key: k, zone: meta.zone, side: meta.side, label: meta.label,
         price: lev.lv[k], multiplier: a.multiplier,
+        techMultiplier: meta.zone === "C" ? 1 : (meta.side === "sell" ? conv.techSellMult : conv.techBuyMult),
         alloc: a
       };
     });
@@ -609,7 +668,7 @@
     result.conviction = conv;
     result.trend = trendScore(inp, lev);
     result.zone = locateZone(inp.price, lev.lv);
-    result.candidates = candidateConditions(scoringInput, lev, conv);
+    result.candidates = candidateConditions(inp, lev, conv);
     // ok 只表示“阶梯可以计算”。数据串号等 error 仍会让 ok=false。
     result.ok = result.errors.length === 0;
     return result;
@@ -718,7 +777,7 @@
     var earningsSoon = eventSoon.filter(function (e) { return e.type === "earnings"; });
 
     var inProfit = price > pos.avgCost;
-    var sentimentKnown = conv.components.filter(function (x) { return x.factor !== "volume" && x.status === "ok"; }).length;
+    var optAux = conv.optionsAux;
     var volComp = conv.components.filter(function (x) { return x.factor === "volume"; })[0];
     var volSpike = volComp && volComp.status === "ok" && volComp.value >= 1.5;
     var riskRefKey = pos.accountType === "long" ? "A2" : "C1";
@@ -751,8 +810,8 @@
         reasonsFor.push("该档目标累计股数已由之前的卖出记录覆盖。");
       } else {
         reasonsFor.push("现价已到达 " + k + "（" + round(tierPrice, 2) + "）——这只是候选条件，本身不足以卖出。");
-        if (conv.sellMult >= 1.2) { conf += 1; reasonsFor.push("量能/期权情绪确认卖出档（卖出乘数 " + conv.sellMult + "）。"); }
-        if (conv.sellMult <= 0.8) { conf -= 1; reasonsAgainst.push("量能/期权情绪不支持卖出（卖出乘数 " + conv.sellMult + "）。"); }
+        if (conv.techSellMult >= 1.2) { conf += 1; reasonsFor.push("放量确认卖出档（量比 " + round(conv.volRatio, 2) + "）。"); }
+        if (conv.techSellMult <= 0.8) { conf -= 1; reasonsAgainst.push("缩量，量能不支持卖出（量比 " + round(conv.volRatio, 2) + "）。"); }
         if (earningsSoon.length) {
           var w = pos.accountType === "swing" ? 1 : 0.5;
           conf += w; reasonsFor.push("财报在 " + earningsSoon[0].daysAway + " 天后（" + earningsSoon[0].date + "），" + (pos.accountType === "swing" ? "波段仓位财报前降低敞口。" : "长期仓位可小幅降低财报跳空风险。"));
@@ -763,8 +822,12 @@
         if (ladder.levels.alignment === "bear") { conf += 1; reasonsFor.push("空头排列下反弹到卖出档，减仓理由更充分。"); }
         if (pos.accountType === "long" && LEVEL_META[k].zone === "D") { conf -= 1; reasonsAgainst.push("长期账户：D 档默认只作提醒，核心逻辑未变时可继续持有。"); }
         if (planTargetHit.length) { conf += 1; reasonsFor.push("已到达你原定的退出价 " + planTargetHit.map(function (t) { return round(t.price, 2); }).join(" / ") + "。"); }
-        if (sentimentKnown === 0) { confidence = "低"; reasonsAgainst.push("期权数据缺失，无法确认情绪，置信度降低。"); }
-        else if (sentimentKnown === 2 && volComp && volComp.status === "ok") confidence = "高";
+        // 置信度只看技术面数据是否完整；期权数据是可选辅助，缺失不降低置信度
+        if (!volComp || volComp.status !== "ok") { confidence = "低"; reasonsAgainst.push("成交量数据缺失或盘中未完结，无法确认量能，置信度降低。"); }
+        if (optAux.used.length) {
+          var dirTxt = optAux.sellAdjPct > 0 ? "偏向减仓" : optAux.sellAdjPct < 0 ? "偏向持有" : "中性";
+          reasonsFor.push("期权情绪（辅助，不计入确认）：" + dirTxt + "，卖出比例相对调整 " + (optAux.sellAdjPct > 0 ? "+" : "") + optAux.sellAdjPct + "%。");
+        }
         if (conf >= 1) decision = "建议减仓";
         else if (conf >= 0) decision = "可考虑减仓（等待确认）";
         else decision = "继续持有";
@@ -913,7 +976,7 @@
   var LIMITATIONS = [
     "阶梯系数是起点估计，没有经过系统性回测；请用自己的历史交易校准。",
     "布林带/EMA 基于日线；盘中价格变化不会改变当天的布林带。",
-    "评分只用量比、Put/Call、IV Rank 三个因子，没有基本面、新闻和大盘环境。",
+    "仓位强弱主要依据布林带、EMA 和成交量；Put/Call 与 IV Rank 是可选辅助，只做 ±5% 以内的相对调整，参数为暂定值、未经回测；没有基本面、新闻和大盘环境。",
     "财报或突发事件造成的跳空可能直接越过多个档位，阶梯不能限制跳空损失。",
     "工具不下单、不连接券商，输出只是参考，不构成投资建议。"
   ];
@@ -941,11 +1004,16 @@
       candidates: ladder.candidates,
       scores: ladder.conviction ? {
         trend: ladder.trend,
-        sentiment: {
+        technical: {
           buyScore: ladder.conviction.buyScore, sellScore: ladder.conviction.sellScore,
-          buyMultiplier: ladder.conviction.buyMult, sellMultiplier: ladder.conviction.sellMult,
-          completeness: ladder.conviction.completeness, components: ladder.conviction.components
-        }
+          buyMultiplier: ladder.conviction.techBuyMult, sellMultiplier: ladder.conviction.techSellMult,
+          volRatio: ladder.conviction.volRatio,
+          components: ladder.conviction.components.filter(function (x) { return x.role === "technical"; })
+        },
+        optionsAux: assign({}, ladder.conviction.optionsAux, {
+          components: ladder.conviction.components.filter(function (x) { return x.role === "optionsAux"; })
+        }),
+        final: { buyMultiplier: ladder.conviction.buyMult, sellMultiplier: ladder.conviction.sellMult, note: "最终乘数 = 技术面乘数 × (1 + 期权相对调整%)；C 档不调整。" }
       } : null,
       allocation: ladder.allocation ? { sellBasis: ladder.allocation.sellBasis, sellCapPct: ladder.allocation.sellCapPct, buyCapPct: ladder.allocation.buyCapPct, sellTotalPct: ladder.allocation.sellTotalPct, buyTotalPct: ladder.allocation.buyTotalPct,
         definition: ladder.allocation.sellBasis === "remaining" ? "卖出比例以触发当时的剩余持仓为基数，累计 = 1 − Π(1 − 各档比例)" : "卖出比例以计划开始时的持仓为基数，按 D1→E2 依次累计，不超过上限" } : null,
@@ -960,7 +1028,7 @@
     report.ladder = ladder.rows.map(function (r) {
       return {
         level: r.key, zone: r.zone, action: r.label, side: r.side, price: round(r.price, 2),
-        allocation: { basePct: r.alloc.basePct, multiplier: r.alloc.multiplier, effectivePct: r.alloc.effectivePct, cumulativePct: r.alloc.cumPct, ofRemainingPct: r.alloc.ofRemainingPct, basis: r.alloc.basis, capped: r.alloc.capped }
+        allocation: { basePct: r.alloc.basePct, techMultiplier: r.techMultiplier, multiplier: r.alloc.multiplier, effectivePct: r.alloc.effectivePct, cumulativePct: r.alloc.cumPct, ofRemainingPct: r.alloc.ofRemainingPct, basis: r.alloc.basis, capped: r.alloc.capped }
       };
     });
     if (includePosition && request.position) {
@@ -980,7 +1048,7 @@
     parseNum: parseNum, parseTime: parseTime, round: round, isValidTicker: isValidTicker, normTicker: normTicker,
     normalizeInput: normalizeInput, validateInput: validateInput, freshness: freshness,
     computeLevels: computeLevels, scoreConviction: scoreConviction, clampMult: clampMult,
-    allocateTiers: allocateTiers, locateZone: locateZone, candidateConditions: candidateConditions,
+    allocateTiers: allocateTiers, OPTION_AUX: OPTION_AUX, locateZone: locateZone, candidateConditions: candidateConditions,
     buildLadder: buildLadder, normalizePosition: normalizePosition, analyzeTakeProfit: analyzeTakeProfit,
     indicatorsFromBars: indicatorsFromBars, emaSeries: emaSeries, analyze: analyze, clone: clone, ymd: ymd
   };

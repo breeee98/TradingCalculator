@@ -12,7 +12,7 @@
 
 公开接口可选参数（只有这些，其他参数一律拒绝）：
 
-- `pcr`：Put/Call 比；`ivr`：IV Rank（0–100）。不传就是“未知”，不会当成 0。
+- `pcr`：Put/Call 成交量比；`ivr`：IV Rank（0–100）。都是可选辅助：可以只传一个或都不传，不传就完全按技术面计算；`0` 会作为真实数值保留；无效值跳过并在 `warnings` 里说明。期权数据不改变任何价格点位，只对仓位比例做 ±5% 以内的相对调整。
 - `options_source`、`options_time`：期权数据的来源和时间，会原样写进输出的 `data.options`。
 - `sell_basis`：`initial`（默认，以初始持仓为基数）或 `remaining`（以剩余持仓为基数）。
 
@@ -48,7 +48,10 @@
 | `ladder[]` | A1–E2 价格，每档 `basePct`、`multiplier`、`effectivePct`（占计划基数）、`cumulativePct`、`ofRemainingPct`、`capped` |
 | `currentZone` | 现价位于哪两档之间、最接近哪一档、是否超出阶梯 |
 | `candidates[]` | 触发的候选条件（到达某档、放量、Put/Call 偏低/偏高、IV 偏高、均线排列……），每条带证据 |
-| `scores.trend` / `scores.sentiment` | 趋势与情绪评分，`components[]` 写明每个因子的数值、是否缺失、加减分和理由 |
+| `scores.trend` | 趋势：EMA 排列与依据 |
+| `scores.technical` | 技术面仓位乘数（成交量，主要依据）及理由 |
+| `scores.optionsAux` | 期权情绪（可选辅助）：`used[]` 参与判断的项目、`skipped[]` 跳过的项目及原因（未填写 / 无效值 / 属于其他股票）、`buyAdjPct` / `sellAdjPct` 相对调整（−5 至 +5）、`mode`（`technicalOnly` 或 `technical+optionsAux`） |
+| `scores.final` | 最终仓位乘数 = 技术面乘数 × (1 + 期权相对调整%)；C 档不调整 |
 | `takeProfit` | 只在受保护接口出现：每档判断（建议减仓 / 可考虑减仓 / 继续持有 / 未触及 / 无需操作 / 已完成）、理由、股数、金额、利润、剩余风险，以及始终存在的三个选项 `trim` / `hold` / `noAction` |
 | `errors[]` / `warnings[]` / `limitations[]` | 数据缺失、过期、串号和模型局限 |
 

@@ -106,25 +106,27 @@ test("卖出比例：保留核心仓上限 + 0% 档位保持 0（原版会强制
   assert.equal(a.sellTotalPct, 60);
 });
 
-test("期权数据缺失：记为 missing，不会被当成 Put/Call=0 触发追涨信号", () => {
+test("期权数据缺失：记为跳过，不会被当成 Put/Call=0 触发追涨调整", () => {
   const withNull = C.buildLadder(mk({ pcr: "", ivr: "" }), { now: NOW });
   const pc = withNull.conviction.components.find((x) => x.factor === "putCall");
   assert.equal(pc.status, "missing");
-  assert.equal(pc.sell, 0);
+  assert.equal(pc.sellPct, 0);
   // 量比 18.4/12.6 = 1.46，中性；缺失期权时卖出乘数应为 1.0
   assert.equal(withNull.conviction.sellMult, 1);
-  assert.equal(withNull.conviction.completeness, "1/3");
-  // 对照：原版 num("") = 0 → pcr ≤ 0.7 → 卖出加分
-  const zero = C.scoreConviction(C.normalizeInput(mk({ pcr: 0.5 })));
-  assert.equal(zero.sellMult, 1.3);
+  assert.equal(withNull.conviction.optionsAux.mode, "technicalOnly");
+  // 对照：原版 num("") = 0 → 卖出乘数 1.3；现在即使真的填了 0.5，也只有 +3% 的相对调整
+  const low = C.scoreConviction(C.normalizeInput(mk({ pcr: 0.5 })));
+  assert.equal(low.sellMult, 1.03);
 });
 
-test("换股：期权数据属于其他股票时报错，并从评分中剔除", () => {
+test("换股：期权数据属于其他股票时跳过并提示，不阻断技术面计算", () => {
   const r = C.buildLadder(mk({ pcr: 0.5, ivr: 70, provenance: { market: BASE.provenance.market, options: { ticker: "NVDA", kind: "manual" } } }), { now: NOW });
-  assert.equal(r.ok, false);
-  assert.ok(r.errors.some((e) => e.code === "OPTIONS_TICKER_MISMATCH"));
-  assert.equal(r.conviction.components.find((x) => x.factor === "putCall").status, "missing");
-  assert.equal(r.conviction.components.find((x) => x.factor === "ivRank").status, "missing");
+  assert.equal(r.ok, true);
+  assert.ok(r.warnings.some((e) => e.code === "OPTIONS_TICKER_MISMATCH"));
+  assert.equal(r.conviction.components.find((x) => x.factor === "putCall").status, "invalid");
+  assert.equal(r.conviction.optionsAux.used.length, 0);
+  assert.ok(r.conviction.optionsAux.skipped.every((x) => x.reason.includes("其他股票")));
+  assert.equal(r.conviction.sellMult, r.conviction.techSellMult);
 });
 
 test("换股：价格/指标属于其他股票时 ok=false", () => {
@@ -139,8 +141,7 @@ test("验证：布林带顺序、价格、IV Rank、系数顺序、比例范围"
   assert.ok(codes({ bbM: 50 }).includes("BB_ORDER"));
   assert.ok(codes({ price: 0 }).includes("NON_POSITIVE"));
   assert.ok(codes({ price: "" }).includes("REQUIRED"));
-  assert.ok(codes({ ivr: 120 }).includes("RANGE"));
-  assert.ok(codes({ pcr: -1 }).includes("NON_POSITIVE"));
+  assert.ok(codes({ price: "abc" }).includes("NOT_A_NUMBER"));
   assert.ok(codes({ kE1: 0.7 }).includes("COEFF_ORDER"));
   assert.ok(codes({ kTrial: 0.2 }).includes("COEFF_ORDER"));
   assert.ok(codes({ pE1: 150 }).includes("ALLOC_RANGE"));
@@ -192,17 +193,22 @@ test("止盈：只到达档位、没有确认 → 不会给“建议减仓”", 
   assert.deepEqual(tp.options.map((o) => o.id), ["trim", "hold", "noAction"]);
 });
 
-test("止盈：放量 + 期权追涨确认 → 建议减仓，股数与金额正确", () => {
+test("止盈：放量确认 → 建议减仓；期权追涨只做 +3% 相对调整，股数与金额正确", () => {
   const lad = C.buildLadder(neutral({ price: 45.6, vol: 2e6, pcr: 0.6, ivr: 30, provenance: { market: BASE.provenance.market, options: { ticker: "MU", kind: "manual" } } }), { now: NOW });
-  assert.equal(lad.conviction.sellMult, 1.3);
+  assert.equal(lad.conviction.techSellMult, 1.3);
+  assert.equal(lad.conviction.sellMult, 1.339); // 1.3 × 1.03
   const tp = C.analyzeTakeProfit(pos(), lad, { now: NOW });
   const d1 = tp.tiers.find((t) => t.tier === "D1"), d2 = tp.tiers.find((t) => t.tier === "D2");
   assert.equal(d1.decision, "建议减仓");
-  assert.equal(d1.suggestedShares, 6);   // floor(100 × 6.5%)
-  assert.equal(d2.suggestedShares, 13);  // floor(100 × 19.5%) − 6
-  assert.equal(tp.summary.sellNowShares, 19);
-  assert.equal(tp.summary.remainingRisk.remainingShares, 81);
-  assert.equal(tp.summary.realizedProfitNow, C.round(19 * (45.6 - 30), 2));
+  assert.equal(d1.suggestedShares, 6);   // floor(100 × 5% × 1.339 = 6.695)
+  assert.equal(d2.suggestedShares, 14);  // floor(100 × 15% × 1.339 = 20.085) − 6
+  assert.equal(tp.summary.sellNowShares, 20);
+  assert.equal(tp.summary.remainingRisk.remainingShares, 80);
+  assert.equal(tp.summary.realizedProfitNow, C.round(20 * (45.6 - 30), 2));
+  // 去掉期权数据，判断不变（结论来自放量，不来自期权）
+  const lad2 = C.buildLadder(neutral({ price: 45.6, vol: 2e6 }), { now: NOW });
+  const tp2 = C.analyzeTakeProfit(pos(), lad2, { now: NOW });
+  assert.deepEqual(tp2.tiers.map((t) => t.decision), tp.tiers.map((t) => t.decision));
   assert.equal(tp.recommendation, "trim");
   // 全部档位合计不超过持仓
   const total = tp.tiers.reduce((a, t) => a + t.suggestedShares, 0);
@@ -239,7 +245,7 @@ test("止盈：已有卖出记录先抵扣低档位，累计股数按计划基�
   const tp = C.analyzeTakeProfit(pos({ shares: 94, sales: [{ date: "2026-10-30", shares: 6, price: 43.7, tier: "D1" }] }), lad, { now: NOW });
   assert.equal(tp.planBaseShares, 100);
   assert.equal(tp.tiers.find((t) => t.tier === "D1").decision, "已完成");
-  assert.equal(tp.tiers.find((t) => t.tier === "D2").suggestedShares, 13);
+  assert.equal(tp.tiers.find((t) => t.tier === "D2").suggestedShares, 14);
   assert.equal(tp.realizedFromRecords, C.round(6 * (43.7 - 30), 2));
 });
 
@@ -312,4 +318,113 @@ test("指标：与第三方实现（R TTR::BBands，plotly 数据集自带列）
     max = Math.max(max, Math.abs(ind.bbM - +rows[i][8]), Math.abs(ind.bbU - +rows[i][9]), Math.abs(ind.bbL - +rows[i][7]));
   }
   assert.ok(max < 1e-6, "最大偏差 " + max);
+});
+
+// ---------- 期权情绪（可选辅助） ----------
+const PCRS = [null, "", 0, "0", 0.5, 0.7, 0.71, 0.9, 1.09, 1.1, 2.5];
+const IVRS = [null, "", 0, "0", 30, 59.9, 60, 100];
+
+test("期权：全部留空 → 完全按技术面，结果区显示两项都已跳过，不报提醒", () => {
+  const r = C.buildLadder(mk({ pcr: "", ivr: "" }), { now: NOW });
+  const o = r.conviction.optionsAux;
+  assert.equal(o.mode, "technicalOnly");
+  assert.deepEqual(o.used, []);
+  assert.deepEqual(o.skipped.map((x) => x.reason), ["未填写，已跳过", "未填写，已跳过"]);
+  assert.equal(r.conviction.buyMult, r.conviction.techBuyMult);
+  assert.equal(r.conviction.sellMult, r.conviction.techSellMult);
+  assert.ok(!r.warnings.some((w) => w.field === "pcr" || w.field === "ivr"));
+  const rep = C.analyze({ market: mk({ pcr: "", ivr: "" }) }, { now: NOW });
+  assert.equal(rep.scores.optionsAux.mode, "technicalOnly");
+  assert.equal(rep.scores.optionsAux.skipped.length, 2);
+});
+
+test("期权：只填一项时只用这一项", () => {
+  const p = C.buildLadder(mk({ pcr: 1.2 }), { now: NOW }).conviction.optionsAux;
+  assert.deepEqual(p.used.map((x) => x.factor), ["putCall"]);
+  assert.deepEqual(p.skipped.map((x) => x.factor), ["ivRank"]);
+  assert.equal(p.buyAdjPct, 3); assert.equal(p.sellAdjPct, -3);
+  const v = C.buildLadder(mk({ ivr: 75 }), { now: NOW }).conviction.optionsAux;
+  assert.deepEqual(v.used.map((x) => x.factor), ["ivRank"]);
+  assert.deepEqual(v.skipped.map((x) => x.factor), ["putCall"]);
+  assert.equal(v.buyAdjPct, -2); assert.equal(v.sellAdjPct, -2);
+});
+
+test("期权：真实填写的 0 保留并参与判断", () => {
+  const r = C.buildLadder(mk({ pcr: "0", ivr: "0" }), { now: NOW });
+  assert.equal(r.input.pcr, 0); assert.equal(r.input.ivr, 0);
+  assert.equal(r.fieldStatus.pcr, "ok"); assert.equal(r.fieldStatus.ivr, "ok");
+  const o = r.conviction.optionsAux;
+  assert.equal(o.used.length, 2);
+  assert.equal(o.sellAdjPct, 3);  // Put/Call 0 ≤ 0.7
+  assert.equal(o.buyAdjPct, -3);
+  const rep = C.analyze({ market: mk({ pcr: 0, ivr: 0 }) }, { now: NOW });
+  assert.equal(rep.inputs.pcr.value, 0); assert.equal(rep.inputs.pcr.status, "ok");
+});
+
+test("期权：无效值不转成 0，跳过并提示，不影响阶梯可用", () => {
+  for (const o of [{ pcr: "abc" }, { pcr: -0.5 }, { ivr: "x" }, { ivr: -5 }, { ivr: 150 }]) {
+    const r = C.buildLadder(mk(o), { now: NOW });
+    const f = Object.keys(o)[0];
+    assert.equal(r.ok, true, JSON.stringify(o));
+    assert.equal(r.fieldStatus[f], "invalid");
+    assert.ok(r.warnings.some((w) => w.code === "OPTION_INVALID"), JSON.stringify(o));
+    assert.equal(r.conviction.optionsAux.used.length, 0);
+    assert.ok(r.conviction.optionsAux.skipped.some((x) => x.reason === "无效值，已跳过"));
+    assert.equal(r.conviction.sellMult, r.conviction.techSellMult);
+    if (typeof o[f] === "string") assert.equal(r.input[f], null, "不是 0");
+  }
+});
+
+test("期权：任何组合都不改变 A–E 价格点位和到达档位", () => {
+  for (const volRatio of [0.5, 1, 2]) {
+    for (const price of [34, 40, 44, 48, 60]) {
+      const base = C.buildLadder(mk({ price, vol: volRatio * 1e6, avgVol: 1e6 }), { now: NOW });
+      const reachedBase = base.candidates.filter((c) => /^REACHED_/.test(c.id)).map((c) => c.id).join();
+      for (const pcr of PCRS) for (const ivr of IVRS) {
+        const r = C.buildLadder(mk({ price, vol: volRatio * 1e6, avgVol: 1e6, pcr, ivr }), { now: NOW });
+        for (const k of C.LEVEL_ORDER) assert.equal(r.lv[k], base.lv[k]);
+        assert.equal(r.candidates.filter((c) => /^REACHED_/.test(c.id)).map((c) => c.id).join(), reachedBase);
+        assert.ok(r.candidates.filter((c) => /^(PCR|IV)_/.test(c.id)).every((c) => c.side === "aux"));
+        assert.deepEqual(r.zone, base.zone);
+      }
+    }
+  }
+});
+
+test("期权：仓位相对调整不超过 ±5%，C 档不调整；20% × 1.05 = 21% 而不是 25%", () => {
+  for (const volRatio of [0.5, 1, 2]) {
+    for (const pcr of PCRS) for (const ivr of IVRS) {
+      const r = C.buildLadder(mk({ vol: volRatio * 1e6, avgVol: 1e6, pcr, ivr }), { now: NOW });
+      const cv = r.conviction;
+      assert.ok(Math.abs(cv.optionsAux.buyAdjPct) <= 5 && Math.abs(cv.optionsAux.sellAdjPct) <= 5);
+      for (const k of C.LEVEL_ORDER) {
+        const a = r.allocation.rows[k];
+        const tech = C.LEVEL_META[k].zone === "C" ? 1 : (C.LEVEL_META[k].side === "sell" ? cv.techSellMult : cv.techBuyMult);
+        const techPct = Math.min(100, a.basePct * tech);
+        if (C.LEVEL_META[k].zone === "C") assert.equal(a.requestedPct, a.basePct, k);
+        else {
+          const ratio = a.requestedPct / techPct;
+          assert.ok(ratio >= 0.95 - 1e-4 && ratio <= 1.05 + 1e-4, `${k} ${pcr} ${ivr} ${ratio}`);
+        }
+      }
+      // 累计上限照旧
+      assert.ok(r.allocation.sellTotalPct <= 100 && r.allocation.buyTotalPct <= 90);
+    }
+  }
+  // 最大负向：Put/Call ≤ 0.7 且 IV Rank ≥ 60 → 买入侧 −5%
+  const worst = C.buildLadder(mk({ pcr: 0.5, ivr: 80 }), { now: NOW }).conviction.optionsAux;
+  assert.equal(worst.buyAdjPct, -5);
+  // 相对调整的例子：基准 20% 在 +5% 时是 21%
+  const a = C.allocateTiers(Object.assign({}, C.DEFAULT_ALLOC, { A1: 20 }), { buyMult: 1.05, sellMult: 1 }, {});
+  assert.equal(a.rows.A1.requestedPct, 21);
+});
+
+test("期权：不单独触发卖出结论（无放量、无事件、中性趋势时，期权偏追涨也不会给“建议减仓”）", () => {
+  const lad = C.buildLadder(neutral({ price: 45.6, pcr: 0.5, ivr: 30, provenance: { market: BASE.provenance.market, options: { ticker: "MU" } } }), { now: NOW });
+  assert.equal(lad.conviction.optionsAux.sellAdjPct, 3);
+  const tp = C.analyzeTakeProfit(pos(), lad, { now: NOW });
+  assert.ok(tp.tiers.filter((t) => t.reached).every((t) => t.decision !== "建议减仓"));
+  assert.ok(tp.tiers.filter((t) => t.reached).every((t) => t.confidence !== "低"), "期权缺失或存在都不影响置信度");
+  const noOpt = C.analyzeTakeProfit(pos(), C.buildLadder(neutral({ price: 45.6 }), { now: NOW }), { now: NOW });
+  assert.deepEqual(noOpt.tiers.map((t) => t.decision), tp.tiers.map((t) => t.decision));
 });

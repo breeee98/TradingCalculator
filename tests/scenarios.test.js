@@ -39,6 +39,15 @@ test("稳定性：期权数据缺失与“中性”期权数据给出完全相�
   for (const { sc, base, variants } of ALL) assert.equal(R.agree(base.days, variants.neutralOpt.days, "rec"), 1, sc.id);
 });
 
+test("期权情绪只是辅助：任何期权假设（中性/追涨/恐慌）都不改变点位和止盈判断", () => {
+  for (const { sc, base, variants } of ALL) {
+    for (const v of [variants.neutralOpt, variants.greedOpt, variants.fearOpt]) {
+      assert.equal(R.agree(base.days, v.days, "rec"), 1, sc.id);
+      v.days.forEach((d, i) => { for (const k of C.LEVEL_ORDER) assert.equal(d.lv[k], base.days[i].lv[k], sc.id + d.date + k); });
+    }
+  }
+});
+
 test("稳定性：现价 ±0.3% 扰动下，止盈判断一致率 ≥ 85%", () => {
   for (const { sc, base, variants } of ALL) {
     for (const v of [variants.up03, variants.dn03]) {

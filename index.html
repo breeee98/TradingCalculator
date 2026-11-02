@@ -273,7 +273,7 @@
   <header class="page">
     <p class="eyebrow">Bree 的小工具箱</p>
     <h1>点位阶梯计算器</h1>
-    <p class="lede">输入布林带 / EMA / 成交量 / 期权数据，改动任何一个数字都会立即重新算出 A–E 五档风险点位和建议仓位比例，不用点按钮。输入股票代码后，点击“自动获取行情”可填入价格、布林带、EMA 和成交量；也可以继续手动修改。Put/Call 比和 IV Rank 需自行填写，切换股票时会自动清空；没填就按“未知”处理，不会当成 0。</p>
+    <p class="lede">以布林带 / EMA / 成交量为主要依据，改动任何一个数字都会立即重新算出 A–E 五档风险点位和建议仓位比例，不用点按钮。输入股票代码后，点击“自动获取行情”可填入价格、布林带、EMA 和成交量；也可以继续手动修改。期权情绪（Put/Call 比、IV Rank）是可选辅助信息，可以不填。</p>
   </header>
 
   <section class="card">
@@ -319,11 +319,12 @@
         </div>
       </div>
       <div class="group">
-        <h3>期权情绪</h3>
+        <h3>期权情绪（可选辅助）</h3>
+        <p class="hint" style="margin:-4px 0 10px;">Put/Call 比和 IV Rank 为可选辅助信息，有数据时可补充情绪判断；没有数据时自动跳过，不影响基础点位计算。</p>
         <div class="grid2">
-          <div class="field"><label for="pcr">Put/Call 比</label><input id="pcr" class="num" type="number" step="0.01" min="0" placeholder="未知"></div>
-          <div class="field"><label for="ivr">IV Rank %</label><input id="ivr" class="num" type="number" step="1" min="0" max="100" placeholder="未知"></div>
-          <div class="field" style="grid-column:1/3;"><label for="optAsof">期权数据时间 / 来源</label><input id="optAsof" placeholder="例：Barchart 11/02 收盘"></div>
+          <div class="field"><label for="pcr">Put/Call 成交量比</label><input id="pcr" class="num" type="number" step="0.01" min="0" placeholder="可选"></div>
+          <div class="field"><label for="ivr">IV Rank %</label><input id="ivr" class="num" type="number" step="1" min="0" max="100" placeholder="可选"></div>
+          <div class="field" style="grid-column:1/3;"><label for="optAsof">期权数据时间 / 来源</label><input id="optAsof" placeholder="可选，例：Barchart 11/02 收盘"></div>
         </div>
       </div>
     </div>
@@ -335,7 +336,7 @@
       <span class="live-badge" id="restoreNote"></span>
     </div>
     <p class="fetch-status" id="fetchStatus" role="status" aria-live="polite" aria-atomic="true">输入代码（如 MU、AAPL、NVDA）后点击“自动获取行情”。指标采用日线数据。</p>
-    <p class="hint">期权情绪不会自动获取：切换股票时会清空 Put/Call 比和 IV Rank，请填入这只股票自己的数据。</p>
+    <p class="hint">期权情绪不会自动获取，也不是必填项；切换股票代码时会自动清空 Put/Call 比和 IV Rank，避免沿用上一只股票的数据。</p>
     <div class="table-wrap" id="provTable"></div>
   </section>
 
@@ -365,7 +366,8 @@
         <div class="method-body">
           <p><strong>点位。</strong>以布林带带宽 <code>BW = 上轨 − 下轨</code> 为单位，向下轨外侧和上轨外侧展开 11 个点位：A1 在下轨下方，A2 贴下轨；B1/B2 在下轨与中轨之间；C1/C2 卡在中轨两侧作试仓区；D1/D2 在中轨与上轨之间；D3 贴上轨；E1/E2 在上轨上方。系数都可以在下面调。</p>
           <p><strong>趋势修正。</strong>若 EMA20 &gt; EMA50 &gt; EMA200（多头排列），且 EMA50 落在下轨与中轨之间，则 A2/B2 会向 EMA50 加权靠拢（强势股回调常常到不了下轨）；若三线空头排列，则 D2/D3 向 EMA50 靠拢，且 A1 略微下修，因为下跌趋势里更容易跌穿布林带。</p>
-          <p><strong>仓位强弱调整。</strong>成交量放大（当日量 ≥ 20日均量 × 1.5）会同时增强买卖两侧的仓位建议；缩量（&lt; 0.8×）则减弱。Put/Call 比 ≥ 1.1（恐慌性买权）在低位是反向看多信号，会加强买入档、减弱卖出档；比值 ≤ 0.7（追涨买权）则相反。IV Rank ≥ 60 视为事件风险偏高，两侧仓位建议都会略微下修。这一段是最值得你拿历史行情（比如MRVL 8月那次反转）回测校准的部分。</p>
+          <p><strong>仓位强弱调整（技术面，主要依据）。</strong>成交量放大（当日量 ≥ 20日均量 × 1.5）会同时增强买卖两侧的仓位建议（×1.3）；缩量（&lt; 0.8×）则减弱（×0.6）。这一段是最值得你拿历史行情（比如MRVL 8月那次反转）回测校准的部分。</p>
+          <p><strong>期权情绪（可选辅助）。</strong>只在技术面算出的仓位比例上做小幅<em>相对</em>调整，不改变任何价格点位，也不会单独触发买入或卖出结论：Put/Call 成交量比 ≥ 1.1 → 买入侧 +3%、卖出侧 −3%；≤ 0.7 → 买入侧 −3%、卖出侧 +3%；IV Rank ≥ 60 → 两侧各 −2%；合计限制在 −5% 至 +5%。“相对”的意思是：原建议 20%，+5% 后是 21%，不是 25%。两项可以只填一项或都不填，空白和无效值会被跳过，真实填写的 0 会保留。C 档（试仓）不做调整。这些是暂定的辅助参数，不是经过回测验证的权重，填写后也不代表预测会更准。</p>
           <div class="coef-grid">
             <div class="field"><label for="kA1">A1 越过下轨幅度 (×BW)</label><input id="kA1" class="num" type="number" step="0.01" value="0.50"></div>
             <div class="field"><label for="kOuter">B1/D1 偏移 (×BW)</label><input id="kOuter" class="num" type="number" step="0.01" value="0.30"></div>
@@ -402,7 +404,7 @@
   <section>
     <div class="card">
       <h2>3 · 止盈分析（可选）</h2>
-      <p class="section-sub">只在你填了持仓时计算。持仓信息只保存在这台设备的浏览器里，按股票代码分开存，不会上传，也不会进入公开接口或快照。价格到达某一档只是“候选”，还需要量能/期权情绪、财报事件、趋势或你原定的退出价之一确认，才会给出“建议减仓”。</p>
+      <p class="section-sub">只在你填了持仓时计算。持仓信息只保存在这台设备的浏览器里，按股票代码分开存，不会上传，也不会进入公开接口或快照。价格到达某一档只是“候选”，还需要放量、财报事件、空头趋势中的反弹或你原定的退出价之一确认，才会给出“建议减仓”。期权情绪只作辅助说明，不算确认条件。</p>
       <div class="groups">
         <div class="group">
           <h3>持仓 · <span id="tpTickerLbl">—</span></h3>
@@ -530,6 +532,16 @@
     loadPositionForm();
   }
 
+  // 第一次打开：行情区保留页面自带的演示数字（明确标为演示），期权情绪保持空白；
+  // 期权示例值只在点击“载入示例数据”时填入。
+  function initDefaults(){
+    prov = freshProv();
+    prov.market.kind = "demo"; prov.market.source = "演示数据";
+    MARKET_FIELDS.forEach(function(f){ prov.market.owners[f] = DEMO_TICKER; });
+    $("pcr").value = ""; $("ivr").value = ""; $("optAsof").value = "";
+    $("asof").value = "演示数据 · 非真实行情";
+  }
+
   function clearOptions(){
     $("pcr").value = ""; $("ivr").value = ""; $("optAsof").value = "";
     prov.options = { kind:"unknown", ticker:"" };
@@ -582,8 +594,12 @@
       var o = prov.market.owners[f];
       return hasVal(f) && o && o !== t;
     });
-    var raw = { ticker: t };
-    C.NUM_FIELDS.forEach(function(f){ raw[f] = $(f).value; });
+    var raw = { ticker: t, invalidRaw: {} };
+    C.NUM_FIELDS.forEach(function(f){
+      raw[f] = $(f).value;
+      // type=number 里输入了无法识别的内容时，浏览器给出空字符串：标为“无效”，而不是“未填写”
+      if ($(f).validity && $(f).validity.badInput) raw.invalidRaw[f] = "无法识别的输入";
+    });
     raw.coeffs = {}; COEFF_IDS.forEach(function(k){ raw.coeffs[k] = $(k).value; });
     raw.alloc = {}; ALLOC_IDS.forEach(function(k){ raw.alloc[k.slice(1)] = $(k).value; });
     raw.options = { sellBasis:$("sellBasis").value, maxSellPct:$("maxSellPct").value, cashReservePct:$("cashReservePct").value };
@@ -604,7 +620,8 @@
   // ---------------------------------------------------------------- 渲染
   var lastLadder = null;
   function convBadge(mult){
-    if (mult >= 1.2) return '<span class="conv up">放量/情绪确认</span>';
+    // 只看技术面（成交量）乘数；期权的 ±5% 辅助调整不改变这个标签
+    if (mult >= 1.2) return '<span class="conv up">放量确认</span>';
     if (mult <= 0.8) return '<span class="conv down">信号偏弱</span>';
     return '<span class="conv flat">中性</span>';
   }
@@ -641,13 +658,13 @@
     else if (m.maybePartialBar) barAge += ' · <span class="tag-warn">可能盘中未完结</span>';
     var manualNote = m.manualFields && m.manualFields.length ? "（手动改过：" + m.manualFields.map(function(x){ return C.FIELD_LABEL[x]; }).join("、") + "）" : "";
     var o = prov.options;
-    var optVals = (hasVal("pcr") ? "P/C " + esc($("pcr").value) : "P/C 未知") + " · " + (hasVal("ivr") ? "IVR " + esc($("ivr").value) + "%" : "IVR 未知");
+    var optVals = (hasVal("pcr") ? "P/C " + esc($("pcr").value) : "P/C 未填") + " · " + (hasVal("ivr") ? "IVR " + esc($("ivr").value) + "%" : "IVR 未填");
     var optOwner = o.ticker ? esc(o.ticker) : (hasVal("pcr") || hasVal("ivr") ? '<span class="tag-warn">未记录</span>' : "—");
     $("provTable").innerHTML =
       '<table class="data"><thead><tr><th>数据</th><th>数值</th><th>来源</th><th>数据时间</th><th>延迟 / 状态</th></tr></thead><tbody>' +
-      "<tr><td>最新价格</td><td class=\"num\">" + fmtPrice(C.parseNum($("price").value)) + "</td><td>" + esc(kindLabel(m.kind)) + (m.source ? " · " + esc(m.source) : "") + "</td><td>" + esc(priceTimeTxt) + "</td><td>" + priceAgeTxt + "</td></tr>" +
+      "<tr><td>最新价格</td><td class=\"num\">" + fmtPrice(C.parseNum($("price").value)) + "</td><td>" + esc(kindLabel(m.kind)) + (m.source && m.source !== kindLabel(m.kind) ? " · " + esc(m.source) : "") + "</td><td>" + esc(priceTimeTxt) + "</td><td>" + priceAgeTxt + "</td></tr>" +
       "<tr><td>日线指标<br><span class=\"hint\">布林带(20,2σ) / EMA / 20日均量</span></td><td class=\"num\">中轨 " + fmtPrice(C.parseNum($("bbM").value)) + "</td><td>" + esc(kindLabel(m.kind)) + esc(manualNote) + "</td><td>最后一根日线：" + barTxt + "</td><td>" + barAge + "</td></tr>" +
-      "<tr><td>期权情绪</td><td class=\"num\">" + optVals + "</td><td>" + esc(kindLabel(o.kind)) + "</td><td>" + (hasVal("optAsof") ? esc($("optAsof").value) : '<span class="tag-warn">未填写</span>') + "</td><td>所属：" + optOwner + "</td></tr>" +
+      "<tr><td>期权情绪<br><span class=\"hint\">可选辅助</span></td><td class=\"num\">" + optVals + "</td><td>" + (hasVal("pcr") || hasVal("ivr") ? esc(kindLabel(o.kind)) : "未填写（可选）") + "</td><td>" + (hasVal("optAsof") ? esc($("optAsof").value) : "—") + "</td><td>所属：" + optOwner + "</td></tr>" +
       "</tbody></table><p class=\"hint\">日线指标盘中不会随价格变化；最新价格超过 15 分钟标 ⚠。</p>";
   }
 
@@ -683,7 +700,7 @@
         '<span class="sub">' + row.zone + ' 档' + (a.capped ? " · 已按上限截断（原 " + a.requestedPct + "%）" : "") + '</span></div>' +
         '<div class="price num">' + fmtPrice(row.price) + '</div>' +
         '<div class="alloc num">' + a.effectivePct + '%<small>' + cumLbl + '</small></div>' +
-        convBadge(row.multiplier);
+        convBadge(row.techMultiplier);
       ladder.appendChild(div);
     });
     var rungEls = ladder.querySelectorAll(".rung");
@@ -710,14 +727,19 @@
     $("basisHint").textContent = "比例说明：卖出档（D/E）" + (al.sellBasis === "remaining" ? "以触发当时的剩余持仓为基数" : "以计划开始时的持仓为基数") +
       "，表中数字已换算成占计划持仓的百分比，D1→E2 累计 " + al.sellTotalPct + "%（上限 " + al.sellCapPct + "%）；买入档（C/B/A）以计划资金为基数，C2→A1 累计 " + al.buyTotalPct + "%（上限 " + al.buyCapPct + "%）。当前位置：" + (r.zone ? r.zone.label : "—") + "。";
 
-    var cv = r.conviction;
+    var cv = r.conviction, oa = cv.optionsAux;
     var items = ["<li><b>趋势 · " + esc(r.trend.label) + "</b>：" + esc(r.trend.basis.join("；")) + "</li>"];
-    cv.components.forEach(function(c){
-      var name = { volume:"量能", putCall:"Put/Call", ivRank:"IV Rank" }[c.factor];
+    cv.components.filter(function(c){ return c.role === "technical"; }).forEach(function(c){
       var st = c.status === "ok" ? "" : (c.status === "partial" ? '<span class="tag-warn">盘中</span> ' : '<span class="tag-warn">缺失</span> ');
-      items.push("<li><b>" + name + "</b>：" + st + esc(c.reason) + "</li>");
+      items.push("<li><b>量能（技术面）</b>：" + st + esc(c.reason) + "</li>");
     });
-    items.push("<li><b>情绪评分</b>：买入 " + cv.buyScore + " → 乘数 ×" + cv.buyMult + "；卖出 " + cv.sellScore + " → 乘数 ×" + cv.sellMult + "（已知因子 " + cv.completeness + "）</li>");
+    var sgn = function(x){ return (x > 0 ? "+" : "") + x + "%"; };
+    var usedTxt = oa.used.length ? oa.used.map(function(u){ return u.label + " " + u.value + "（买 " + sgn(u.buyPct) + " / 卖 " + sgn(u.sellPct) + "）"; }).join("；") : "无";
+    var skipTxt = oa.skipped.length ? oa.skipped.map(function(x){ return x.label + "：" + x.reason; }).join("；") : "无";
+    items.push("<li><b>期权情绪（可选辅助）</b>：已参与 — " + esc(usedTxt) + "；已跳过 — " + esc(skipTxt) + "。" +
+      (oa.used.length ? "合计相对调整：买入侧 " + sgn(oa.buyAdjPct) + "、卖出侧 " + sgn(oa.sellAdjPct) + "（上限 ±" + oa.capPct + "%，不改变点位）。" : "完全按技术面计算。") + "</li>");
+    items.push("<li><b>仓位乘数</b>：买入侧 技术面 ×" + cv.techBuyMult + (oa.buyAdjPct ? " × " + (1 + oa.buyAdjPct/100).toFixed(2) + " = ×" + (+cv.buyMult.toFixed(4)) : "") +
+      "；卖出侧 技术面 ×" + cv.techSellMult + (oa.sellAdjPct ? " × " + (1 + oa.sellAdjPct/100).toFixed(2) + " = ×" + (+cv.sellMult.toFixed(4)) : "") + "；C 档不调整。</li>");
     $("scoreBox").innerHTML = items.join("");
 
     renderTakeProfit(r);
@@ -1021,14 +1043,14 @@
       };
       MARKET_FIELDS.forEach(function(f){ prov.market.owners[f] = ticker; });
       var cleared = false;
-      if (prov.options.ticker !== ticker && (hasVal("pcr") || hasVal("ivr"))){ clearOptions(); cleared = true; }
+      if (prov.options.ticker && prov.options.ticker !== ticker && (hasVal("pcr") || hasVal("ivr"))){ clearOptions(); cleared = true; }
       $("asof").value = "Twelve Data · " + ticker + " · 价格时间 " + (pt ? pt.toLocaleString("zh-CN",{hour12:false}) : "未提供") +
         " · 最后日线 " + (prov.market.barDate || "未提供") + " · 获取于 " + fetchedAt.toLocaleString("zh-CN",{hour12:false});
       loadPositionForm();
       render();
       saveLastState();
       $("restoreNote").textContent = "";
-      marketStatus(ticker + " 行情已填入，点位已重新计算。" + (cleared ? "旧的期权数据已清空，" : "") + "Put/Call 比和 IV Rank 需填入 " + ticker + " 自己的数据，未填按未知处理。", "success");
+      marketStatus(ticker + " 行情已填入，点位已重新计算。" + (cleared ? "旧的期权数据已清空。" : "") + "期权情绪为可选辅助，没有数据时自动跳过。", "success");
     } catch(err){
       if (marketRequest !== request) return;
       var message = request.timedOut ? "请求超过 20 秒，请稍后重试。" :
@@ -1048,10 +1070,11 @@
     var t = curTicker();
     if (id === "ticker"){
       if (t !== lastTicker){
-        if (prov.options.ticker !== t && (hasVal("pcr") || hasVal("ivr") || hasVal("optAsof"))){
+        // 切换股票代码：一律清空期权数据，避免沿用上一只股票的 Put/Call 和 IV Rank
+        if (hasVal("pcr") || hasVal("ivr") || hasVal("optAsof")){
           clearOptions();
-          marketStatus("已切换到 " + (t || "空代码") + "：Put/Call 比和 IV Rank 已清空，请填入这只股票的数据。");
-        }
+          marketStatus("已切换到 " + (t || "空代码") + "：Put/Call 比和 IV Rank 已清空（可选，不填也能计算）。");
+        } else prov.options = { kind:"unknown", ticker:"" };
         lastTicker = t;
         loadPositionForm();
       }
@@ -1097,7 +1120,7 @@
     var all = readPositions(); delete all[curTicker()]; writePositions(all);
     loadPositionForm(); render();
   });
-  $("btnSample").addEventListener("click", function(){ loadSample(); lastTicker = curTicker(); render(); saveLastState(); });
+  $("btnSample").addEventListener("click", function(){ loadSample(); lastTicker = curTicker(); marketStatus("已载入示例数据（演示用，不是真实行情；期权示例值仅在此时填入）。"); render(); saveLastState(); });
   $("btnSave").addEventListener("click", saveSnapshot);
   $("btnExport").addEventListener("click", exportText);
   $("btnClearHist").addEventListener("click", function(){ writeHist([]); renderHist(); });
@@ -1106,7 +1129,7 @@
   document.querySelector("#jsonPreview").closest("details").addEventListener("toggle", renderJsonPreview);
 
   var restored = restoreLastState();
-  if (!restored) loadSample();
+  if (!restored) initDefaults();
   lastTicker = curTicker();
   loadPositionForm();
   $("restoreNote").textContent = restored ? "已载入你上次填写的数据" : "";
