@@ -1,0 +1,12 @@
+# 复制为 api/wrangler.toml 后，在 api/ 目录运行：
+#   npx wrangler secret put TWELVE_DATA_API_KEY
+#   npx wrangler secret put POSITION_TOKEN      # 可选：启用受保护的持仓接口；用足够长的随机字符串
+#   npx wrangler deploy
+# 不要把任何密钥写进这个文件或提交到 GitHub。
+name = "tradingcalculator-api"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# 只有需要从某个网页（浏览器）直接调用持仓接口时才填，例如 "https://breeee98.github.io"
+ALLOWED_ORIGIN = ""
