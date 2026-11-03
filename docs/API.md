@@ -1,6 +1,12 @@
 # 只读 JSON 分析接口（给 Muse 或其他程序调用）
 
-> **当前状态：代码已写好并通过测试，但还没有部署。** 现有网页继续使用原来的 `trading-api.duyuqin1998.workers.dev`，它没有被改动。Muse 目前**没有**接上任何接口。
+> **当前状态（2026-11-03）：已部署。**
+>
+> - 新 Worker：`tradingcalculator-api`，地址 `https://tradingcalculator-api.duyuqin1998.workers.dev`
+> - 公开接口 `GET /v1/analysis` 已上线，测试返回 `status: ok`。
+> - 持仓接口 `POST /v1/position-analysis` 已开启（已配置 `POSITION_TOKEN`），Muse 已用真实持仓测试通过。
+> - 现有网页仍然使用原来的 `trading-api.duyuqin1998.workers.dev` 取行情，没有改动。
+> - Muse 已接通：调用上面两个接口；也在本地同步了一份 `core.js`，可以离线计算。
 
 ## 1. 三个接口
 
@@ -57,7 +63,18 @@
 
 完整示例：`node cli/analyze.js examples/request.public.json`。
 
-## 3. 部署（需要你自己操作，我没有你的 Cloudflare 权限）
+## 3. 部署
+
+当前线上版本是用下面的“方法 A”部署的。以后修改了 `core.js` 或 `api/worker.js`，按同样的方法重新部署一次即可，密钥不用重新设置。
+
+### 方法 A：只用浏览器（不需要安装任何软件）
+
+1. 把 `api/worker.js` 和 `core.js` 打包成一个文件：在任意装有 Node.js 的电脑上，进入 `api/` 运行 `npx wrangler deploy --dry-run --outdir dist`，得到 `dist/worker.js`（也可以请助手代为打包）。
+2. 打开 Cloudflare 控制台 → Workers & Pages → `tradingcalculator-api` → Edit code，把编辑框里的内容全部替换成 `dist/worker.js` 的内容，点 Deploy。
+3. 首次部署时，在 Settings → Variables and Secrets 添加两个 Secret：`TWELVE_DATA_API_KEY`（Twelve Data 的 key）和 `POSITION_TOKEN`（可选，启用持仓接口，用 32 位以上随机字符串）。之后重新部署不需要再设置。
+
+### 方法 B：命令行
+
 
 ```bash
 cd api
@@ -72,9 +89,11 @@ npx wrangler deploy
 - 盘中时，今天这根未走完的日线不参与指标计算，避免布林带和量比盘中来回跳；现价用实时报价并带时间戳。
 - 如果想让现有网页也显示真实的行情时间：把网页里的 `API_URL` 改成新 Worker 的根地址（`GET /?symbol=` 兼容旧格式），或者在旧 Worker 返回里加上 `price_time`、`indicator_date`、`partial_bar` 三个字段，网页会自动读取。
 
-## 4. Muse 怎么接（需要你确认 Muse 的运行环境）
+## 4. Muse 怎么接
 
-我不知道 Muse 跑在哪里、能用哪些工具，所以没有假设它已经接通。按 Muse 的能力选一种：
+**当前接法（2026-11-03）：** Muse 调用公开接口和持仓接口（第 1 种 + 第 2 种）。PCR 由 Muse 从 Nasdaq 期权链计算后通过 `pcr`、`options_source`、`options_time` 传入；没有可靠的 IV Rank 来源时不传 `ivr`，按设计跳过。Muse 本地也同步了一份 `core.js`（第 4 种），改了公式以后需要让它重新同步这个文件。
+
+其他可选接法：
 
 1. **Muse 能发 HTTP 请求**（有 web fetch / HTTP 工具）：部署后把 `https://<你的worker>.workers.dev/v1/analysis?symbol=MU` 给它。如果 Muse 所在平台有域名白名单，需要把 `*.workers.dev`（或你的自定义域名）加进去。
 2. **要分析持仓**：只有当 Muse 有**服务端的密钥存储**时，才把 `POSITION_TOKEN` 放进去，由 Muse 的后端调用 `POST /v1/position-analysis`。不要把 token 写进对话、提示词、Notion 页面或网页代码。如果 Muse 只是一个聊天界面、没有安全的密钥存储，就不要给它 token，改用第 3 种。
